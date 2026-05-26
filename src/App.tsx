@@ -64,7 +64,9 @@ export default function App() {
         onSignOut={signOut}
         onOpenAdmin={profile.is_admin ? () => setShowAdmin(true) : undefined}
       />
-      <Analytics />
+      {typeof window !== 'undefined' && import.meta.env.PROD && import.meta.env.VITE_ENABLE_VERCEL_ANALYTICS !== 'false' && (
+        <Analytics />
+      )}
     </>
   );
 }
