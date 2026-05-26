@@ -32,7 +32,12 @@ export default function AdminScreen({ currentProfile, onClose, onSignOut }) {
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("hotels").select("id, name").order("name"),
     ]);
-    setProfiles((profs ?? []).filter((p) => p.id !== currentProfile.id));
+    const isSuperAdmin = currentProfile.email === "eblenoah@gmail.com";
+    setProfiles((profs ?? []).filter((p) => {
+      if (p.id === currentProfile.id) return false; // never show yourself
+      if (!isSuperAdmin && p.email === "eblenoah@gmail.com") return false; // hide superadmin from other admins
+      return true;
+    }));
     setHotels(htls ?? []);
     setLoading(false);
   }, [currentProfile.id]);
