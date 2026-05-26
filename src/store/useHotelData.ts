@@ -666,6 +666,21 @@ async function resetLocalCache() {
 	await bootstrapHotelData(state.hotelId);
 }
 
+async function clearActivityLogs() {
+	if (!state.hotelId) return;
+	const previous = state.activityLogs;
+	// Optimistically clear local state
+ 	mergeState({ activityLogs: [] });
+ 	const { error } = await supabase.from("activity_logs").delete().eq("hotel_id", state.hotelId);
+ 	if (error) {
+ 		// revert on error
+ 		mergeState({ activityLogs: previous });
+ 		if (!isNetworkFailure(error)) throw error;
+ 		// otherwise keep previous and surface a transient error
+ 		mergeState({ lastError: error.message ?? String(error) });
+ 	}
+}
+
 async function toggleNotify() {
 	mergeState({ notifyOn: !state.notifyOn });
 }
@@ -685,5 +700,5 @@ export function useHotelData(hotelId?: string | null) {
 		void bootstrapHotelData(hotelId ?? undefined);
 	}, [hotelId]);
 
-	return { ...snapshot, updateRoomStatus, reportIssue, saveRoom, createRoom, deleteRoom, addStaff, deleteStaff, assignRoom, assignVerifier, togglePriority, toggleRecouche, toggleDnd, setCleaningHour, updateNote, assignIssue, resolveIssue, renameHotel, resetLocalCache, toggleNotify, refreshHotelData };
+	 return { ...snapshot, updateRoomStatus, reportIssue, saveRoom, createRoom, deleteRoom, addStaff, deleteStaff, assignRoom, assignVerifier, togglePriority, toggleRecouche, toggleDnd, setCleaningHour, updateNote, assignIssue, resolveIssue, renameHotel, resetLocalCache, clearActivityLogs, toggleNotify, refreshHotelData };
 }

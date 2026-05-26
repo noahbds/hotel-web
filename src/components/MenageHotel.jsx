@@ -328,6 +328,13 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
     catch (e) { console.error(e); showToast("Réinitialisation impossible"); }
   };
 
+  const clearActivity = async () => {
+    try {
+      await hotel.clearActivityLogs();
+      showToast("Historique effacé");
+    } catch (e) { console.error(e); showToast("Impossible de supprimer l'historique"); }
+  };
+
   const assignIssue = async (issue, staffId) => {
     try { await hotel.assignIssue(issue.id, staffId); }
     catch (e) { console.error(e); showToast("Attribution impossible"); }
@@ -452,7 +459,7 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
             <TeamTab data={data} onAdd={addStaff} onDelete={deleteStaff} />
           )}
           {tab === "activity" && (
-            <ActivityTab data={data} onToggleNotify={toggleNotify} onRename={renameHotel} onReset={resetData} />
+            <ActivityTab data={data} onToggleNotify={toggleNotify} onRename={renameHotel} onReset={resetData} onClearActivity={clearActivity} profile={profile} />
           )}
         </main>
 
@@ -829,9 +836,10 @@ function IssueCard({ issue, data, onResolve, onAssign, onOpenLightbox }) {
 /* ================================================================== */
 /*  Onglet ACTIVITÉ                                                     */
 /* ================================================================== */
-function ActivityTab({ data, onToggleNotify, onRename, onReset }) {
+function ActivityTab({ data, onToggleNotify, onRename, onReset, onClearActivity, profile }) {
   const [hotelName, setHotelName] = useState(data.hotelName);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   useEffect(() => { setHotelName(data.hotelName); }, [data.hotelName]);
   const iconFor = (e) => {
     if (e.type === "issue") return <Wrench size={16} className="text-amber-600" />;
@@ -877,6 +885,23 @@ function ActivityTab({ data, onToggleNotify, onRename, onReset }) {
               className="flex-1 bg-stone-100 text-stone-600 font-semibold py-2.5 rounded-xl text-sm">Annuler</button>
             <button onClick={() => { onReset(); setConfirmReset(false); }}
               className="flex-1 bg-rose-500 text-white font-semibold py-2.5 rounded-xl text-sm">Tout réinitialiser</button>
+          </div>
+        )}
+        {profile?.is_admin && (
+          <div className="mt-3">
+            {!confirmClear ? (
+              <button onClick={() => setConfirmClear(true)}
+                className="w-full text-stone-700 font-medium py-2 text-sm flex items-center justify-center gap-2">
+                <Trash2 size={15} /> Effacer l'historique
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmClear(false)}
+                  className="flex-1 bg-stone-100 text-stone-600 font-semibold py-2.5 rounded-xl text-sm">Annuler</button>
+                <button onClick={() => { onClearActivity?.(); setConfirmClear(false); }}
+                  className="flex-1 bg-stone-800 text-white font-semibold py-2.5 rounded-xl text-sm">Confirmer</button>
+              </div>
+            )}
           </div>
         )}
       </div>
