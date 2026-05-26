@@ -4,6 +4,7 @@ import {
   Camera, BedDouble, ClipboardCheck, Sparkles, AlertTriangle,
   Building2, Image as ImageIcon, CheckCircle2, Clock,
   Users, UserPlus, User, Moon, Crown, LogOut, Settings, Lock,
+  WifiOff, Star,
 } from "lucide-react";
 import { useHotelData, setCurrentStaffId } from "../store/useHotelData";
 import { supabase } from "../services/supabase/client";
@@ -138,6 +139,29 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
   useEffect(() => {
     if (hotel.lastError) showToast(sanitizeErrorMessage(hotel.lastError) ?? hotel.lastError);
   }, [hotel.lastError, showToast]);
+
+  // In-app toasts for room assignment events (no push permission needed)
+  useEffect(() => {
+    const STATUS_LABELS = { sale: "Sale", propre: "Propre", controlee: "Contrôlée" };
+    const handlers = {
+      "hotel:assigned":         (e) => showToast(`Chambre ${e.detail.roomName} vous a été attribuée`),
+      "hotel:verifier-assigned":(e) => showToast(`Chambre ${e.detail.roomName} — vérification assignée`),
+      "hotel:verify-ready":     (e) => showToast(`Chambre ${e.detail.roomName} prête à vérifier`),
+      "hotel:status-changed":   (e) => showToast(`Chambre ${e.detail.roomName} — ${STATUS_LABELS[e.detail.status] ?? e.detail.status}`),
+    };
+    Object.entries(handlers).forEach(([type, fn]) => window.addEventListener(type, fn));
+    return () => Object.entries(handlers).forEach(([type, fn]) => window.removeEventListener(type, fn));
+  }, [showToast]);
+
+  // Online/offline tracking
+  const [online, setOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => { setOnline(false); showToast("Connexion perdue — mode hors ligne"); };
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, [showToast]);
 
   const data = useMemo(() => {
     const rooms = hotel.rooms.map((room) => ({
@@ -333,6 +357,8 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
 
   const openIssues = data.issues.filter((i) => !i.resolved);
   const counts = ORDER.reduce((a, s) => ({ ...a, [s]: data.rooms.filter((r) => r.status === s).length }), {});
+  const myAssignedCount = data.rooms.filter((r) => r.assignee === profile?.staff_id || r.verifier === profile?.staff_id).length;
+  const toVerifyCount = data.rooms.filter((r) => r.status === "propre").length;
 
   return (
     <div className="min-h-screen bg-stone-100 flex justify-center"
@@ -352,6 +378,11 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {!online && (
+                <span className="flex items-center gap-1 text-[11px] text-amber-600 bg-amber-50 px-2 py-1 rounded-full font-medium">
+                  <WifiOff size={12} /> Hors ligne
+                </span>
+              )}
               {profile?.is_admin && (
                 <button onClick={onOpenAdmin} aria-label="Administration"
                   className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center active:scale-95 transition">
@@ -375,16 +406,33 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
           <div className="flex gap-2 mt-3">
             {ORDER.map((s) => {
               const C = STATUS[s];
+              const showVerifyBadge = s === "propre" && toVerifyCount > 0 && (profile?.role === "gouvernante" || profile?.is_admin);
               return (
-                <div key={s} className={`flex-1 rounded-2xl ${C.bg} ${C.border} border px-2.5 py-2`}>
+                <button key={s} onClick={() => { setTab("rooms"); setFilter(s); }}
+                  className={`flex-1 rounded-2xl ${C.bg} ${C.border} border px-2.5 py-2 text-left active:scale-[0.97] transition relative`}>
+                  {showVerifyBadge && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-sky-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">
+                      {toVerifyCount}
+                    </span>
+                  )}
                   <div className="flex items-center gap-1.5">
                     <span className={`w-2 h-2 rounded-full ${C.dot}`} />
                     <span className="text-[11px] text-stone-500 font-medium">{C.label}</span>
                   </div>
                   <p className={`text-2xl font-bold ${C.text} leading-none mt-0.5`}>{counts[s]}</p>
-                </div>
+                </button>
               );
             })}
+            {myAssignedCount > 0 && profile?.staff_id && (
+              <button onClick={() => { setTab("rooms"); setFilter("mine"); }}
+                className="flex-1 rounded-2xl bg-violet-50 border border-violet-200 px-2.5 py-2 text-left active:scale-[0.97] transition">
+                <div className="flex items-center gap-1.5">
+                  <Star size={10} className="text-violet-500 fill-violet-500" />
+                  <span className="text-[11px] text-stone-500 font-medium">Mes ch.</span>
+                </div>
+                <p className="text-2xl font-bold text-violet-700 leading-none mt-0.5">{myAssignedCount}</p>
+              </button>
+            )}
           </div>
         </header>
 
@@ -471,19 +519,34 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
 /* ================================================================== */
 function RoomsTab({ data, filter, setFilter, onCycle, onOpen, profile }) {
   const [q, setQ] = useState("");
+  const myId = profile?.staff_id ?? null;
   const query = q.trim().toLowerCase();
   let rooms = data.rooms;
-  if (filter === "depart") rooms = rooms.filter((r) => r.priority);
+  if (filter === "mine") rooms = rooms.filter((r) => r.assignee === myId || r.verifier === myId);
+  else if (filter === "depart") rooms = rooms.filter((r) => r.priority);
   else if (filter === "recouche") rooms = rooms.filter((r) => r.recouche);
   else if (filter === "dnd") rooms = rooms.filter((r) => r.dnd);
   else if (filter !== "all") rooms = rooms.filter((r) => r.status === filter);
   if (query) rooms = rooms.filter((r) => r.name.toLowerCase().includes(query));
-  rooms = [...rooms].sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0));
+  rooms = [...rooms].sort((a, b) => {
+    // my rooms first, then priority, then floor/name
+    const aMe = (a.assignee === myId || a.verifier === myId) ? 0 : 1;
+    const bMe = (b.assignee === myId || b.verifier === myId) ? 0 : 1;
+    if (aMe !== bMe) return aMe - bMe;
+    return (b.priority ? 1 : 0) - (a.priority ? 1 : 0);
+  });
   const floors = [...new Set(rooms.map((r) => r.floor))].sort((a, b) => a - b);
   const issueByRoom = (id) => data.issues.some((i) => i.roomId === id && !i.resolved);
   const departCount = data.rooms.filter((r) => r.priority).length;
   const recoucheCount = data.rooms.filter((r) => r.recouche).length;
   const dndCount = data.rooms.filter((r) => r.dnd).length;
+  const myCount = myId ? data.rooms.filter((r) => r.assignee === myId || r.verifier === myId).length : 0;
+  // progress per floor across ALL rooms (not just filtered)
+  const floorProgress = (f) => {
+    const all = data.rooms.filter((r) => r.floor === f);
+    if (!all.length) return null;
+    return { done: all.filter((r) => r.status === "controlee").length, total: all.length };
+  };
 
   return (
     <div>
@@ -493,6 +556,11 @@ function RoomsTab({ data, filter, setFilter, onCycle, onOpen, profile }) {
       </div>
       <div className="flex gap-2 px-5 py-3 overflow-x-auto">
         <Chip active={filter === "all"} onClick={() => setFilter("all")}>Toutes</Chip>
+        {myCount > 0 && myId && (
+          <Chip active={filter === "mine"} onClick={() => setFilter("mine")} dot="bg-violet-500">
+            Mes chambres ({myCount})
+          </Chip>
+        )}
         {departCount > 0 && (
           <Chip active={filter === "depart"} onClick={() => setFilter("depart")} dot="bg-orange-500">
             Départs ({departCount})
@@ -521,30 +589,56 @@ function RoomsTab({ data, filter, setFilter, onCycle, onOpen, profile }) {
         </p>
       )}
 
-      {floors.map((f) => (
+      {floors.map((f) => {
+        const prog = floorProgress(f);
+        const allDone = prog && prog.done === prog.total;
+        return (
         <div key={f} className="mb-2">
           <div className="flex items-center gap-1.5 px-5 pt-3 pb-1">
             <Building2 size={13} className="text-stone-400" />
             <p className="text-[11px] uppercase tracking-wider text-stone-400 font-semibold">Étage {f}</p>
+            {prog && (
+              <div className="flex items-center gap-1.5 ml-auto">
+                <div className="w-16 h-1.5 bg-stone-200 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${allDone ? "bg-emerald-500" : "bg-sky-400"}`}
+                    style={{ width: `${(prog.done / prog.total) * 100}%` }} />
+                </div>
+                <span className={`text-[10px] font-semibold ${allDone ? "text-emerald-600" : "text-stone-400"}`}>
+                  {prog.done}/{prog.total}
+                </span>
+              </div>
+            )}
           </div>
           <div className="px-3">
             {rooms.filter((r) => r.floor === f).map((room) => {
               const C = STATUS[room.status];
+              const isAssignee = myId && room.assignee === myId;
+              const isVerifier = myId && room.verifier === myId;
+              const isMyRoom = isAssignee || isVerifier;
               return (
                 <div key={room.id}
-                  className={`flex items-center bg-white rounded-2xl mb-2 pl-4 pr-2 py-2.5 transition ${room.priority ? "ring-2 ring-orange-300" : room.recouche ? "ring-2 ring-indigo-200" : room.dnd ? "ring-1 ring-rose-200" : ""}`}>
+                  className={`flex items-center bg-white rounded-2xl mb-2 pl-4 pr-2 py-2.5 transition
+                    ${isMyRoom ? "ring-2 ring-violet-300 bg-violet-50/30" : ""}
+                    ${!isMyRoom && room.priority ? "ring-2 ring-orange-300" : ""}
+                    ${!isMyRoom && !room.priority && room.recouche ? "ring-2 ring-indigo-200" : ""}
+                    ${!isMyRoom && !room.priority && !room.recouche && room.dnd ? "ring-1 ring-rose-200" : ""}`}>
                   <button onClick={() => onOpen(room)} className="flex items-center flex-1 min-w-0 text-left">
-                    <div className="w-11 h-11 rounded-xl bg-stone-100 flex items-center justify-center mr-3 shrink-0 relative">
-                      <BedDouble size={20} className="text-stone-500" />
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center mr-3 shrink-0 relative ${isMyRoom ? "bg-violet-100" : "bg-stone-100"}`}>
+                      <BedDouble size={20} className={isMyRoom ? "text-violet-600" : "text-stone-500"} />
                       {room.dnd && (
                         <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center">
                           <Moon size={9} className="text-white" />
                         </span>
                       )}
+                      {isMyRoom && !room.dnd && (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-violet-500 rounded-full flex items-center justify-center">
+                          <Star size={8} className="text-white fill-white" />
+                        </span>
+                      )}
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="font-semibold text-stone-800 truncate">{room.name}</p>
+                        <p className={`font-semibold truncate ${isMyRoom ? "text-violet-900" : "text-stone-800"}`}>{room.name}</p>
                         {room.priority && (
                           <span className="text-[10px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-md shrink-0">DÉPART</span>
                         )}
@@ -553,6 +647,9 @@ function RoomsTab({ data, filter, setFilter, onCycle, onOpen, profile }) {
                         )}
                         {room.dnd && (
                           <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md shrink-0">DND</span>
+                        )}
+                        {isVerifier && !isAssignee && (
+                          <span className="text-[10px] font-bold text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded-md shrink-0">VÉRIF.</span>
                         )}
                       </div>
                       <p className="text-xs text-stone-400 flex items-center gap-1 truncate">
@@ -588,7 +685,8 @@ function RoomsTab({ data, filter, setFilter, onCycle, onOpen, profile }) {
             })}
           </div>
         </div>
-      ))}
+      );
+      })}
     </div>
   );
 }
@@ -846,12 +944,31 @@ function TeamTab({ data, onAdd, onDelete }) {
               <span className={`w-2 h-2 rounded-full ${RC.dot}`} />{RC.full} ({members.length})
             </p>
             <div className="bg-white rounded-2xl overflow-hidden">
-              {members.map((m, idx) => (
+              {members.map((m, idx) => {
+                const assignedRooms = data.rooms.filter((r) => r.assignee === m.id && r.status !== "controlee");
+                const verifyRooms   = data.rooms.filter((r) => r.verifier === m.id && r.status === "propre");
+                return (
                 <div key={m.id} className={`flex items-center gap-3 px-4 py-3 ${idx > 0 ? "border-t border-stone-100" : ""}`}>
                   <div className={`w-9 h-9 rounded-full ${RC.bg} flex items-center justify-center shrink-0`}>
                     <User size={17} className={RC.text} />
                   </div>
-                  <span className="flex-1 font-medium text-stone-800">{m.name}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium text-stone-800 block">{m.name}</span>
+                    {(assignedRooms.length > 0 || verifyRooms.length > 0) && (
+                      <div className="flex gap-1.5 mt-0.5 flex-wrap">
+                        {assignedRooms.length > 0 && (
+                          <span className="text-[10px] font-semibold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded-md">
+                            {assignedRooms.length} chambre{assignedRooms.length > 1 ? "s" : ""}
+                          </span>
+                        )}
+                        {verifyRooms.length > 0 && (
+                          <span className="text-[10px] font-semibold text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded-md">
+                            {verifyRooms.length} à vérifier
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   {confirmDel === m.id ? (
                     <div className="flex gap-1.5">
                       <button onClick={() => setConfirmDel(null)}
@@ -866,7 +983,8 @@ function TeamTab({ data, onAdd, onDelete }) {
                     </button>
                   )}
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
         );

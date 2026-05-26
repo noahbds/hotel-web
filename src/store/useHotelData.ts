@@ -299,16 +299,23 @@ function setupRealtime(hotelId: string) {
 			const next = payload.new as RoomRow;
 			if (currentStaffId) {
 				const prev = state.rooms.find((r) => r.id === next.id);
+				const dispatch = (type: string, detail: Record<string, string>) => {
+					if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(type, { detail }));
+				};
 				if (next.assignee_staff_id === currentStaffId && prev?.assignee_staff_id !== currentStaffId) {
 					void pushNotification(`Chambre ${next.name}`, "Cette chambre vous a été attribuée.");
+					dispatch("hotel:assigned", { roomName: next.name });
 				} else if (next.assignee_staff_id === currentStaffId && prev?.status !== next.status) {
 					const STATUS_LABELS: Record<string, string> = { sale: "Sale", propre: "Propre", controlee: "Contrôlée" };
 					void pushNotification(`Chambre ${next.name}`, `Statut : ${STATUS_LABELS[next.status] ?? next.status}`);
+					dispatch("hotel:status-changed", { roomName: next.name, status: next.status });
 				}
 				if (next.verifier_staff_id === currentStaffId && prev?.verifier_staff_id !== currentStaffId) {
 					void pushNotification(`Chambre ${next.name}`, "Vous êtes assigné(e) à la vérification.");
+					dispatch("hotel:verifier-assigned", { roomName: next.name });
 				} else if (next.verifier_staff_id === currentStaffId && next.status === "propre" && prev?.status !== "propre") {
 					void pushNotification(`Chambre ${next.name}`, "Chambre prête à vérifier.");
+					dispatch("hotel:verify-ready", { roomName: next.name });
 				}
 			}
 			replaceRoom(next);
