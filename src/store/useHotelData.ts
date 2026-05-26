@@ -52,11 +52,18 @@ export function setCurrentStaffId(id: string | null) {
 	currentStaffId = id;
 }
 
-function pushNotification(title: string, body: string) {
+async function pushNotification(title: string, body: string) {
 	if (!state.notifyOn) return;
 	if (typeof window === "undefined" || !("Notification" in window)) return;
 	if (Notification.permission !== "granted") return;
-	try { new Notification(title, { body, icon: "/favicon.ico" }); } catch { /* ignore */ }
+	try {
+		if ("serviceWorker" in navigator) {
+			const reg = await navigator.serviceWorker.ready;
+			await reg.showNotification(title, { body, icon: "/favicon.svg", badge: "/favicon.svg" });
+		} else {
+			new Notification(title, { body, icon: "/favicon.svg" });
+		}
+	} catch { /* ignore */ }
 }
 
 const listeners = new Set<() => void>();
@@ -266,6 +273,16 @@ function cleanupRealtime() {
 	}
 }
 
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleReconnect(hotelId: string) {
+	if (reconnectTimer) return;
+	reconnectTimer = setTimeout(() => {
+		reconnectTimer = null;
+		if (activeHotelId === hotelId) setupRealtime(hotelId);
+	}, 3000);
+}
+
 function setupRealtime(hotelId: string) {
 	cleanupRealtime();
 
@@ -282,11 +299,16 @@ function setupRealtime(hotelId: string) {
 			const next = payload.new as RoomRow;
 			if (currentStaffId) {
 				const prev = state.rooms.find((r) => r.id === next.id);
-				const STATUS_LABELS: Record<string, string> = { sale: "Sale", propre: "Propre", controlee: "Contrôlée" };
 				if (next.assignee_staff_id === currentStaffId && prev?.assignee_staff_id !== currentStaffId) {
-					pushNotification(`Chambre ${next.name}`, "Cette chambre vous a été attribuée.");
+					void pushNotification(`Chambre ${next.name}`, "Cette chambre vous a été attribuée.");
 				} else if (next.assignee_staff_id === currentStaffId && prev?.status !== next.status) {
-					pushNotification(`Chambre ${next.name}`, `Statut : ${STATUS_LABELS[next.status] ?? next.status}`);
+					const STATUS_LABELS: Record<string, string> = { sale: "Sale", propre: "Propre", controlee: "Contrôlée" };
+					void pushNotification(`Chambre ${next.name}`, `Statut : ${STATUS_LABELS[next.status] ?? next.status}`);
+				}
+				if (next.verifier_staff_id === currentStaffId && prev?.verifier_staff_id !== currentStaffId) {
+					void pushNotification(`Chambre ${next.name}`, "Vous êtes assigné(e) à la vérification.");
+				} else if (next.verifier_staff_id === currentStaffId && next.status === "propre" && prev?.status !== "propre") {
+					void pushNotification(`Chambre ${next.name}`, "Chambre prête à vérifier.");
 				}
 			}
 			replaceRoom(next);
@@ -319,7 +341,23 @@ function setupRealtime(hotelId: string) {
 			mergeState({ isSyncing: true });
 			void flushPendingMutations(hotelId);
 		}
-		if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") mergeState({ isSyncing: false });
+		if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+			mergeState({ isSyncing: false });
+			scheduleReconnect(hotelId);
+		}
+		if (status === "CLOSED") mergeState({ isSyncing: false });
+	});
+}
+
+if (typeof document !== "undefined") {
+	document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "visible" && activeHotelId) {
+			void fetchInitialData(activeHotelId).then(() => {
+				if (activeHotelId && (!activeChannel || (activeChannel as { state?: string }).state === "closed")) {
+					setupRealtime(activeHotelId);
+				}
+			});
+		}
 	});
 }
 
@@ -519,13 +557,15 @@ async function assignVerifier(roomId: string, staffId: string | null) {
 async function togglePriority(roomId: string) {
 	const previous = state.rooms.find((room) => room.id === roomId);
 	if (!previous) return;
-	await updateRoomRow(roomId, { priority: !previous.priority });
+	const next = !previous.priority;
+	await updateRoomRow(roomId, { priority: next, ...(next ? { recouche: false } : {}) });
 }
 
 async function toggleRecouche(roomId: string) {
 	const previous = state.rooms.find((room) => room.id === roomId);
 	if (!previous) return;
-	await updateRoomRow(roomId, { recouche: !previous.recouche });
+	const next = !previous.recouche;
+	await updateRoomRow(roomId, { recouche: next, ...(next ? { priority: false } : {}) });
 }
 
 async function toggleDnd(roomId: string) {

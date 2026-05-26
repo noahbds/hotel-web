@@ -3,7 +3,7 @@ import {
   Plus, Wrench, Bell, Check, X, Trash2, Pencil,
   Camera, BedDouble, ClipboardCheck, Sparkles, AlertTriangle,
   Building2, Image as ImageIcon, CheckCircle2, Clock,
-  Users, UserPlus, User, Moon, Crown, LogOut, Settings,
+  Users, UserPlus, User, Moon, Crown, LogOut, Settings, Lock,
 } from "lucide-react";
 import { useHotelData, setCurrentStaffId } from "../store/useHotelData";
 import { supabase } from "../services/supabase/client";
@@ -99,6 +99,17 @@ function compressImage(file, maxSize = 900, quality = 0.55) {
   });
 }
 
+function canSetStatus(profile, room, targetStatus) {
+  if (!profile) return false;
+  if (profile.is_admin || profile.role === "gouvernante") return true;
+  const sid = profile.staff_id;
+  if (!sid) return false;
+  if (targetStatus === "controlee") return sid === room.verifier;
+  if (targetStatus === "propre") return sid === room.assignee;
+  // sale: reception or anyone assigned/verified can reset
+  return profile.role === "reception" || sid === room.assignee || sid === room.verifier;
+}
+
 /* ================================================================== */
 /*  APP                                                                 */
 /* ================================================================== */
@@ -181,8 +192,7 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
   const applyStatus = async (room, ns) => {
     if (ns === room.status) return;
     try {
-      await hotel.updateRoomStatus(data.hotelId, room.id, ns, room.verifier, null);
-      if (openRoomId === room.id) setOpenRoomId(room.id);
+      await hotel.updateRoomStatus(data.hotelId, room.id, ns, room.verifier, profile?.staff_id ?? null);
     } catch (e) { console.error(e);
       showToast("Mise à jour impossible");
     }
@@ -207,7 +217,6 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
         note: (room.note ?? "").trim(),
       });
       showToast(exists ? "Chambre modifiée" : "Chambre ajoutée");
-      if (openRoomId === room.id) setOpenRoomId(room.id);
     } catch (e) { console.error(e);
       showToast("Sauvegarde impossible");
     }
@@ -225,7 +234,7 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
 
   const reportIssue = async (room, desc, photos, assignee) => {
     try {
-      await hotel.reportIssue(data.hotelId, room.id, desc, photos, assignee || null, null);
+      await hotel.reportIssue(data.hotelId, room.id, desc, photos, assignee || null, profile?.staff_id ?? null);
       showToast("Problème signalé");
     } catch (e) { console.error(e);
       showToast("Signalement impossible");
@@ -385,6 +394,7 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
             <RoomsTab
               data={data} filter={filter} setFilter={setFilter}
               onCycle={cycleStatus} onOpen={(room) => setOpenRoomId(room.id)}
+              profile={profile}
             />
           )}
           {tab === "maintenance" && (
@@ -423,7 +433,7 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
             onTogglePriority={togglePriority} onToggleRecouche={toggleRecouche}
             onToggleDnd={toggleDnd} onCleaningHour={setCleaningHour} onNote={updateNote}
             issues={data.issues.filter((i) => i.roomId === openRoom.id && !i.resolved)}
-            canAssign={canAssign} canVerify={canVerify}
+            canAssign={canAssign} canVerify={canVerify} profile={profile}
           />
         )}
 
@@ -459,7 +469,7 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
 /* ================================================================== */
 /*  Onglet CHAMBRES                                                     */
 /* ================================================================== */
-function RoomsTab({ data, filter, setFilter, onCycle, onOpen }) {
+function RoomsTab({ data, filter, setFilter, onCycle, onOpen, profile }) {
   const [q, setQ] = useState("");
   const query = q.trim().toLowerCase();
   let rooms = data.rooms;
@@ -522,7 +532,7 @@ function RoomsTab({ data, filter, setFilter, onCycle, onOpen }) {
               const C = STATUS[room.status];
               return (
                 <div key={room.id}
-                  className={`flex items-center bg-white rounded-2xl mb-2 pl-4 pr-2 py-2.5 active:bg-stone-50 transition ${room.priority ? "ring-1 ring-orange-200" : room.recouche ? "ring-1 ring-indigo-200" : ""}`}>
+                  className={`flex items-center bg-white rounded-2xl mb-2 pl-4 pr-2 py-2.5 transition ${room.priority ? "ring-2 ring-orange-300" : room.recouche ? "ring-2 ring-indigo-200" : room.dnd ? "ring-1 ring-rose-200" : ""}`}>
                   <button onClick={() => onOpen(room)} className="flex items-center flex-1 min-w-0 text-left">
                     <div className="w-11 h-11 rounded-xl bg-stone-100 flex items-center justify-center mr-3 shrink-0 relative">
                       <BedDouble size={20} className="text-stone-500" />
@@ -559,11 +569,20 @@ function RoomsTab({ data, filter, setFilter, onCycle, onOpen }) {
                       </span>
                     )}
                   </button>
-                  <button onClick={() => onCycle(room)}
-                    className={`shrink-0 flex items-center gap-1.5 ${C.bg} ${C.text} ${C.border} border rounded-full pl-2.5 pr-3 py-1.5 active:scale-95 transition`}>
-                    <span className={`w-2 h-2 rounded-full ${C.dot}`} />
-                    <span className="text-[13px] font-semibold">{C.label}</span>
-                  </button>
+                  {(() => {
+                    const ns = nextStatus(room.status);
+                    const canCycle = canSetStatus(profile, room, ns);
+                    return (
+                      <button onClick={() => canCycle && onCycle(room)}
+                        disabled={!canCycle}
+                        className={`shrink-0 flex items-center gap-1.5 ${C.bg} ${C.text} ${C.border} border rounded-full pl-2.5 pr-3 py-1.5 transition ${canCycle ? "active:scale-95" : "opacity-40 cursor-default"}`}>
+                        {canCycle
+                          ? <span className={`w-2 h-2 rounded-full ${C.dot}`} />
+                          : <Lock size={11} />}
+                        <span className="text-[13px] font-semibold">{C.label}</span>
+                      </button>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -715,15 +734,22 @@ function ActivityTab({ data, onToggleNotify, onRename, onReset }) {
   };
   return (
     <div className="px-4 pt-4">
-      <div className="bg-white rounded-2xl p-4 mb-4 flex items-center justify-between">
-        <div className="flex-1 pr-3">
-          <p className="font-semibold text-stone-800 text-[15px]">Notifications</p>
-          <p className="text-xs text-stone-400 mt-0.5">Être alerté quand une chambre est prête ou qu'un problème est signalé.</p>
+      <div className="bg-white rounded-2xl p-4 mb-4">
+        <div className="flex items-center justify-between">
+          <div className="flex-1 pr-3">
+            <p className="font-semibold text-stone-800 text-[15px]">Notifications</p>
+            <p className="text-xs text-stone-400 mt-0.5">Être alerté quand une chambre est prête ou qu'un problème est signalé.</p>
+          </div>
+          <button onClick={onToggleNotify}
+            className={`w-12 h-7 rounded-full transition relative shrink-0 ${data.notifyOn ? "bg-emerald-500" : "bg-stone-200"}`}>
+            <span className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-all ${data.notifyOn ? "left-[22px]" : "left-0.5"}`} />
+          </button>
         </div>
-        <button onClick={onToggleNotify}
-          className={`w-12 h-7 rounded-full transition relative shrink-0 ${data.notifyOn ? "bg-emerald-500" : "bg-stone-200"}`}>
-          <span className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-all ${data.notifyOn ? "left-[22px]" : "left-0.5"}`} />
-        </button>
+        {data.notifyOn && typeof Notification !== "undefined" && Notification.permission !== "granted" && (
+          <p className="mt-2 text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2">
+            Autorisez les notifications dans les réglages de votre navigateur pour les recevoir.
+          </p>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl p-4 mb-4">
@@ -856,7 +882,7 @@ function TeamTab({ data, onAdd, onDelete }) {
 /* ================================================================== */
 /*  Fiche d'une chambre                                                 */
 /* ================================================================== */
-function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onReport, onAssign, onVerifier, onTogglePriority, onToggleRecouche, onToggleDnd, onCleaningHour, onNote, issues, canAssign = true, canVerify = true }) {
+function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onReport, onAssign, onVerifier, onTogglePriority, onToggleRecouche, onToggleDnd, onCleaningHour, onNote, issues, canAssign = true, canVerify = true, profile }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(room.name);
   const [floor, setFloor] = useState(String(room.floor));
@@ -963,14 +989,14 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
           <ToggleDot on={room.dnd} color="bg-rose-500" />
         </button>
         {!room.dnd && (
-          <div className="px-4 pb-3 flex items-center gap-2 border-t border-stone-100">
-            <Clock size={13} className="text-stone-400 shrink-0 mt-2.5" />
-            <label className="text-xs text-stone-400 font-medium shrink-0 mt-2.5">Heure souhaitée</label>
+          <div className="px-4 pt-2.5 pb-3 flex items-center gap-2 border-t border-stone-100">
+            <Clock size={13} className="text-stone-400 shrink-0" />
+            <label className="text-xs text-stone-400 font-medium shrink-0">Heure souhaitée</label>
             <input
               type="time"
               value={room.cleaningHour || ""}
               onChange={(e) => onCleaningHour(room, e.target.value)}
-              className="ml-auto mt-2.5 bg-stone-100 rounded-lg px-2 py-1 text-sm outline-none w-28 text-right"
+              className="ml-auto bg-stone-100 rounded-lg px-2 py-1 text-sm outline-none w-28 text-right"
             />
           </div>
         )}
@@ -989,11 +1015,19 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
         {ORDER.map((s) => {
           const SC = STATUS[s];
           const active = room.status === s;
+          const canSet = canSetStatus(profile, room, s);
           return (
-            <button key={s} onClick={() => onSetStatus(room, s)}
-              className={`rounded-2xl py-3 px-1 border-2 transition active:scale-95 ${
-                active ? `${SC.solid} border-transparent text-white` : `bg-white ${SC.border} ${SC.text}`}`}>
-              <SC.Icon size={20} className="mx-auto mb-1" />
+            <button key={s} onClick={() => canSet && !active && onSetStatus(room, s)}
+              disabled={!canSet && !active}
+              className={`rounded-2xl py-3 px-1 border-2 transition ${
+                active
+                  ? `${SC.solid} border-transparent text-white`
+                  : canSet
+                    ? `bg-white ${SC.border} ${SC.text} active:scale-95`
+                    : "bg-stone-50 border-stone-100 text-stone-300 cursor-default"}`}>
+              {!canSet && !active
+                ? <Lock size={18} className="mx-auto mb-1 text-stone-300" />
+                : <SC.Icon size={20} className="mx-auto mb-1" />}
               <span className="text-[13px] font-semibold block">{SC.label}</span>
             </button>
           );
@@ -1109,7 +1143,7 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
             </div>
           )}
 
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple onChange={handlePhotos} className="hidden" />
+          <input ref={fileRef} type="file" accept="image/*" multiple onChange={handlePhotos} className="hidden" />
           <div className="flex gap-2">
             <button onClick={() => fileRef.current?.click()} disabled={photos.length >= 4}
               className={`flex items-center gap-2 bg-white text-stone-600 text-sm font-medium px-3 py-2 rounded-xl ${photos.length >= 4 ? "opacity-40" : ""}`}>
