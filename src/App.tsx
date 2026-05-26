@@ -4,6 +4,7 @@ import AuthScreen from "./components/AuthScreen.jsx";
 import AdminScreen from "./components/AdminScreen.jsx";
 import { supabase, supabaseConfigMissing } from "./services/supabase/client";
 import { useAuth } from "./hooks/useAuth";
+import { Analytics } from "@vercel/analytics/react";
 
 export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
@@ -57,11 +58,14 @@ export default function App() {
   }
 
   return (
-    <MenageHotel
-      profile={profile}
-      onSignOut={signOut}
-      onOpenAdmin={profile.is_admin ? () => setShowAdmin(true) : undefined}
-    />
+    <>
+      <MenageHotel
+        profile={profile}
+        onSignOut={signOut}
+        onOpenAdmin={profile.is_admin ? () => setShowAdmin(true) : undefined}
+      />
+      <Analytics />
+    </>
   );
 }
 
