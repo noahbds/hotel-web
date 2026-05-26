@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../services/supabase/client";
 import type { ProfileRow } from "../types/hotel";
 
@@ -14,6 +14,7 @@ export interface AuthState {
 export function useAuth(): AuthState {
 	const [profile, setProfile] = useState<ProfileRow | null>(null);
 	const [loading, setLoading] = useState(true);
+	const userIdRef = useRef<string | null>(null);
 
 	const loadProfile = useCallback(async (userId: string) => {
 		const { data } = await supabase
@@ -28,6 +29,7 @@ export function useAuth(): AuthState {
 	useEffect(() => {
 		supabase.auth.getSession().then(({ data: { session } }) => {
 			if (session?.user) {
+				userIdRef.current = session.user.id;
 				void loadProfile(session.user.id);
 			} else {
 				setLoading(false);
@@ -36,8 +38,10 @@ export function useAuth(): AuthState {
 
 		const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
 			if (session?.user) {
+				userIdRef.current = session.user.id;
 				void loadProfile(session.user.id);
 			} else {
+				userIdRef.current = null;
 				setProfile(null);
 				setLoading(false);
 			}
@@ -46,7 +50,7 @@ export function useAuth(): AuthState {
 		return () => subscription.unsubscribe();
 	}, [loadProfile]);
 
-	// Watch for profile updates in realtime (e.g. admin assigns hotel/role)
+	// Primary: realtime subscription for profile updates (admin assigns hotel/role)
 	useEffect(() => {
 		if (!profile?.id) return;
 		const channel = supabase
@@ -59,6 +63,16 @@ export function useAuth(): AuthState {
 			.subscribe();
 		return () => { void supabase.removeChannel(channel); };
 	}, [profile?.id]);
+
+	// Fallback: poll every 4 seconds while waiting for hotel assignment
+	// Handles cases where realtime isn't configured on the profiles table
+	useEffect(() => {
+		if (!profile?.id || profile.hotel_id || profile.is_admin) return;
+		const interval = setInterval(() => {
+			if (userIdRef.current) void loadProfile(userIdRef.current);
+		}, 4000);
+		return () => clearInterval(interval);
+	}, [profile?.id, profile?.hotel_id, profile?.is_admin, loadProfile]);
 
 	const updateProfile = useCallback(async (name: string, avatarUrl?: string | null) => {
 		const { data, error } = await supabase.rpc("update_my_profile", {
