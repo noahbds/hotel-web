@@ -954,24 +954,23 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
       </div>
 
       {/* DND + heure de ménage */}
-      <div className={`rounded-2xl border-2 px-4 py-3 mb-4 transition ${room.dnd ? "bg-rose-50 border-rose-300" : "bg-white border-stone-200"}`}>
-        <div className="flex items-center justify-between">
+      <div className={`rounded-2xl border-2 mb-4 transition overflow-hidden ${room.dnd ? "bg-rose-50 border-rose-300" : "bg-white border-stone-200"}`}>
+        <button onClick={() => onToggleDnd(room)} aria-label="Basculer ne pas déranger"
+          className="w-full flex items-center justify-between px-4 py-3 active:scale-[0.99] transition">
           <span className={`text-sm font-semibold ${room.dnd ? "text-rose-700" : "text-stone-600"}`}>
             <Moon size={14} className="inline mr-1.5 -mt-0.5" />Ne pas déranger
           </span>
-          <button onClick={() => onToggleDnd(room)} aria-label="Basculer ne pas déranger">
-            <ToggleDot on={room.dnd} color="bg-rose-500" />
-          </button>
-        </div>
+          <ToggleDot on={room.dnd} color="bg-rose-500" />
+        </button>
         {!room.dnd && (
-          <div className="mt-2.5 flex items-center gap-2">
-            <Clock size={13} className="text-stone-400 shrink-0" />
-            <label className="text-xs text-stone-400 font-medium shrink-0">Heure souhaitée</label>
+          <div className="px-4 pb-3 flex items-center gap-2 border-t border-stone-100">
+            <Clock size={13} className="text-stone-400 shrink-0 mt-2.5" />
+            <label className="text-xs text-stone-400 font-medium shrink-0 mt-2.5">Heure souhaitée</label>
             <input
               type="time"
               value={room.cleaningHour || ""}
               onChange={(e) => onCleaningHour(room, e.target.value)}
-              className="ml-auto bg-stone-100 rounded-lg px-2 py-1 text-sm outline-none w-28 text-right"
+              className="ml-auto mt-2.5 bg-stone-100 rounded-lg px-2 py-1 text-sm outline-none w-28 text-right"
             />
           </div>
         )}
