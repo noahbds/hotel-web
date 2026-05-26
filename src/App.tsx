@@ -5,6 +5,7 @@ import AdminScreen from "./components/AdminScreen.jsx";
 import { supabase, supabaseConfigMissing } from "./services/supabase/client";
 import { useAuth } from "./hooks/useAuth";
 import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
@@ -65,7 +66,10 @@ export default function App() {
         onOpenAdmin={profile.is_admin ? () => setShowAdmin(true) : undefined}
       />
       {typeof window !== 'undefined' && import.meta.env.PROD && import.meta.env.VITE_ENABLE_VERCEL_ANALYTICS !== 'false' && (
-        <Analytics />
+        <>
+          <Analytics />
+          <SpeedInsights />
+        </>
       )}
     </>
   );
