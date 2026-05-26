@@ -256,7 +256,7 @@ async function fetchInitialData(hotelId: string) {
 	const [roomsResult, issuesResult, staffResult, activityResult] = await Promise.all([
 		supabase.from("rooms").select("*").eq("hotel_id", hotelId).order("floor", { ascending: true }).order("name", { ascending: true }),
 		supabase.from("issues").select("*").eq("hotel_id", hotelId).order("created_at", { ascending: false }),
-		supabase.from("staff").select("*").eq("hotel_id", hotelId).order("role", { ascending: true }).order("name", { ascending: true }),
+		supabase.from("staff").select("*").eq("hotel_id", hotelId).eq("hidden", false).order("role", { ascending: true }).order("name", { ascending: true }),
 		supabase.from("activity_logs").select("*").eq("hotel_id", hotelId).order("created_at", { ascending: false }).limit(100),
 	]);
 
@@ -325,7 +325,12 @@ function setupRealtime(hotelId: string) {
 				mergeState({ staff: state.staff.filter((person) => person.id !== (payload.old as { id: string }).id), lastSyncedAt: new Date().toISOString() });
 				return;
 			}
-			replaceStaff(payload.new as StaffRow);
+			const next = payload.new as StaffRow;
+			if (next.hidden) {
+				mergeState({ staff: state.staff.filter((person) => person.id !== next.id), lastSyncedAt: new Date().toISOString() });
+				return;
+			}
+			replaceStaff(next);
 		})
 		.on("postgres_changes", { event: "*", schema: "public", table: "activity_logs", filter: `hotel_id=eq.${hotelId}` }, (payload) => {
 			if (payload.eventType === "DELETE") {
@@ -516,7 +521,7 @@ async function deleteRoom(roomId: string) {
 
 async function addStaff(name: string, role: StaffRole) {
 	if (!state.hotelId) throw new Error("Hotel data has not finished loading yet.");
-	const next: StaffRow = { id: uid(), hotel_id: state.hotelId, name: name.trim(), role, active: true, profile_id: null, avatar_url: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+	const next: StaffRow = { id: uid(), hotel_id: state.hotelId, name: name.trim(), role, active: true, hidden: false, profile_id: null, avatar_url: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
 	replaceStaff(next);
 	const { error } = await supabase.from("staff").insert(next);
 	if (error) {

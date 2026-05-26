@@ -5,7 +5,7 @@ export type ActivityType = "info" | "status" | "issue" | "resolved" | "assign" |
 export interface HotelRow { id: string; name: string; created_at: string; updated_at: string; }
 export interface StaffRow {
 	id: string; hotel_id: string; name: string; role: StaffRole; active: boolean;
-	profile_id: string | null; avatar_url: string;
+	hidden: boolean; profile_id: string | null; avatar_url: string;
 	created_at: string; updated_at: string;
 }
 export interface RoomRow {
