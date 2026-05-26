@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = "https://YOUR_PROJECT_ID.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+const SUPABASE_URL = "https://tfdrlseqgenmhokirtff.supabase.co ";
+const SUPABASE_ANON_KEY = "sb_publishable_fqmxngC0W1i8GeXTt0iE2g_dUraSAVM";
 
 const memoryStorage = (() => {
   const store = new Map<string, string>();

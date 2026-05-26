@@ -13,6 +13,8 @@ import type {
 	RoomStatus,
 } from "../types/hotel";
 
+const SUPABASE_URL_VALID = Boolean(import.meta.env.VITE_SUPABASE_URL && !String(import.meta.env.VITE_SUPABASE_URL).includes("YOUR_PROJECT_ID"));
+
 type PendingMutation =
 	| { id: string; kind: "updateRoomStatus"; payload: UpdateRoomStatusInput; rollbackRoom: RoomRow }
 	| { id: string; kind: "reportIssue"; payload: ReportIssueInput; tempIssueId: string };
@@ -21,6 +23,43 @@ const STATE_CACHE_PREFIX = "hotel-app:web-state";
 const QUEUE_CACHE_PREFIX = "hotel-app:web-queue";
 const ACTIVE_HOTEL_KEY = "hotel-app:active-hotel-id";
 const NOTIFY_KEY = "hotel-app:notify-on";
+
+const SEED: HotelDataState = {
+	hotel: {
+		id: "hotel-seed-1",
+		name: "Hôtel Le Beffroi",
+		created_at: new Date().toISOString(),
+		updated_at: new Date().toISOString(),
+	},
+	hotelId: "hotel-seed-1",
+	rooms: [
+		{ id: "r1", hotel_id: "hotel-seed-1", name: "101", floor: 1, status: "controlee", assignee_staff_id: "s1", verifier_staff_id: "s3", priority: false, note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "r2", hotel_id: "hotel-seed-1", name: "102", floor: 1, status: "sale", assignee_staff_id: "s1", verifier_staff_id: null, priority: true, note: "Lit bébé demandé", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "r3", hotel_id: "hotel-seed-1", name: "103", floor: 1, status: "propre", assignee_staff_id: "s2", verifier_staff_id: null, priority: false, note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "r4", hotel_id: "hotel-seed-1", name: "104", floor: 1, status: "sale", assignee_staff_id: null, verifier_staff_id: null, priority: true, note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "r5", hotel_id: "hotel-seed-1", name: "201", floor: 2, status: "sale", assignee_staff_id: "s2", verifier_staff_id: null, priority: false, note: "Ne pas déranger avant 14h", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "r6", hotel_id: "hotel-seed-1", name: "202", floor: 2, status: "controlee", assignee_staff_id: null, verifier_staff_id: "s3", priority: false, note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "r7", hotel_id: "hotel-seed-1", name: "203", floor: 2, status: "propre", assignee_staff_id: null, verifier_staff_id: null, priority: false, note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "r8", hotel_id: "hotel-seed-1", name: "Suite", floor: 3, status: "sale", assignee_staff_id: null, verifier_staff_id: null, priority: true, note: "Arrivée VIP 16h", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+	],
+	issues: [],
+	staff: [
+		{ id: "s1", hotel_id: "hotel-seed-1", name: "Sofia", role: "chambre", active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "s2", hotel_id: "hotel-seed-1", name: "Léa", role: "chambre", active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "s3", hotel_id: "hotel-seed-1", name: "Claire", role: "gouvernante", active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "s4", hotel_id: "hotel-seed-1", name: "Marc", role: "maintenance", active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+		{ id: "s5", hotel_id: "hotel-seed-1", name: "Karim", role: "reception", active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+	],
+	activityLogs: [
+		{ id: "a0", hotel_id: "hotel-seed-1", room_id: null, issue_id: null, actor_staff_id: null, type: "info", status: null, text: "Bienvenue 👋 Touchez la pastille d'une chambre pour changer son statut.", metadata: {}, created_at: new Date().toISOString() },
+	],
+	notifyOn: false,
+	isHydrated: true,
+	isLoading: false,
+	isSyncing: false,
+	lastError: null,
+	lastSyncedAt: new Date().toISOString(),
+};
 
 const EMPTY_STATE: HotelDataState = {
 	hotel: null,
@@ -274,26 +313,36 @@ async function bootstrapHotelData(requestedHotelId?: string | null) {
 	if (bootstrappingPromise && activeHotelId === requestedHotelId) return bootstrappingPromise;
 
 	bootstrappingPromise = (async () => {
-		const hotel = await fetchActiveHotel(requestedHotelId ?? activeHotelId);
-		if (!hotel) {
-			mergeState({ ...EMPTY_STATE, isHydrated: true, isLoading: false, isSyncing: false, lastError: "No hotel row found in Supabase." });
+		const useSeedFallback = !SUPABASE_URL_VALID;
+		if (useSeedFallback) {
+			state = { ...SEED };
+			activeHotelId = SEED.hotelId;
+			emit();
 			return;
 		}
 
-		activeHotelId = hotel.id;
-		if (canUseWebStorage()) window.localStorage.setItem(ACTIVE_HOTEL_KEY, hotel.id);
-
-		const cached = loadCachedState(hotel.id);
-		state = { ...cached, hotel, hotelId: hotel.id, notifyOn: readStorage<boolean>(NOTIFY_KEY) ?? cached.notifyOn };
-		emit();
-
 		try {
+			const hotel = await fetchActiveHotel(requestedHotelId ?? activeHotelId);
+			if (!hotel) {
+				mergeState({ ...EMPTY_STATE, isHydrated: true, isLoading: false, isSyncing: false, lastError: "No hotel row found in Supabase." });
+				return;
+			}
+
+			activeHotelId = hotel.id;
+			if (canUseWebStorage()) window.localStorage.setItem(ACTIVE_HOTEL_KEY, hotel.id);
+
+			const cached = loadCachedState(hotel.id);
+			state = { ...cached, hotel, hotelId: hotel.id, notifyOn: readStorage<boolean>(NOTIFY_KEY) ?? cached.notifyOn };
+			emit();
+
 			await fetchInitialData(hotel.id);
 			writeStorage(snapshotKey(hotel.id), state);
 			setupRealtime(hotel.id);
 			await flushPendingMutations(hotel.id);
 		} catch (error) {
-			mergeState({ isLoading: false, isSyncing: false, isHydrated: true, lastError: error instanceof Error ? error.message : "Unable to load hotel data." });
+			state = { ...SEED, lastError: error instanceof Error ? error.message : "Unable to load hotel data." };
+			activeHotelId = SEED.hotelId;
+			emit();
 		}
 	})().finally(() => {
 		bootstrappingPromise = null;
