@@ -100,6 +100,20 @@ function queueKey(hotelId: string) {
 	return key(QUEUE_CACHE_PREFIX, hotelId);
 }
 
+function normalizeRoom(row: RoomRow): RoomRow {
+	return {
+		...row,
+		recouche: row.recouche ?? false,
+		dnd: row.dnd ?? false,
+		cleaning_hour: row.cleaning_hour ?? "",
+	};
+}
+
+function normalizeIssue(row: IssueRow): IssueRow {
+	const urls = row.photo_urls?.length ? row.photo_urls : (row.photo_url ? [row.photo_url] : []);
+	return { ...row, photo_urls: urls };
+}
+
 function sortRooms(rooms: RoomRow[]) {
 	return [...rooms].sort((left, right) => left.floor - right.floor || left.name.localeCompare(right.name, "fr", { numeric: true, sensitivity: "base" }));
 }
@@ -118,13 +132,23 @@ function sortActivityLogs(activityLogs: ActivityLogRow[]) {
 }
 
 function replaceRoom(nextRoom: RoomRow) {
-	state = { ...state, rooms: sortRooms(state.rooms.some((room) => room.id === nextRoom.id) ? state.rooms.map((room) => (room.id === nextRoom.id ? nextRoom : room)) : [nextRoom, ...state.rooms]), lastSyncedAt: new Date().toISOString() };
+	const room = normalizeRoom(nextRoom);
+	state = { ...state, rooms: sortRooms(state.rooms.some((r) => r.id === room.id) ? state.rooms.map((r) => (r.id === room.id ? room : r)) : [room, ...state.rooms]), lastSyncedAt: new Date().toISOString() };
 	emit();
 	schedulePersist();
 }
 
 function replaceIssue(nextIssue: IssueRow) {
-	state = { ...state, issues: sortIssues(state.issues.some((issue) => issue.id === nextIssue.id) ? state.issues.map((issue) => (issue.id === nextIssue.id ? nextIssue : issue)) : [nextIssue, ...state.issues]), lastSyncedAt: new Date().toISOString() };
+	const issue = normalizeIssue(nextIssue);
+	state = { ...state, issues: sortIssues(state.issues.some((i) => i.id === issue.id) ? state.issues.map((i) => (i.id === issue.id ? issue : i)) : [issue, ...state.issues]), lastSyncedAt: new Date().toISOString() };
+	emit();
+	schedulePersist();
+}
+
+function replaceIssueRemovingTemp(nextIssue: IssueRow, tempId: string) {
+	const issue = normalizeIssue(nextIssue);
+	const without = state.issues.filter((i) => i.id !== tempId && i.id !== issue.id);
+	state = { ...state, issues: sortIssues([issue, ...without]), lastSyncedAt: new Date().toISOString() };
 	emit();
 	schedulePersist();
 }
@@ -178,7 +202,7 @@ function loadCachedState(hotelId: string) {
 	if (cachedQueue) queue = cachedQueue;
 
 	if (cachedState) {
-		return { ...EMPTY_STATE, ...cachedState, hotelId, isHydrated: true, isLoading: true, isSyncing: true, rooms: sortRooms(cachedState.rooms ?? []), issues: sortIssues(cachedState.issues ?? []), staff: sortStaff(cachedState.staff ?? []), activityLogs: sortActivityLogs(cachedState.activityLogs ?? []) } satisfies HotelDataState;
+		return { ...EMPTY_STATE, ...cachedState, hotelId, isHydrated: true, isLoading: true, isSyncing: true, rooms: sortRooms((cachedState.rooms ?? []).map(normalizeRoom)), issues: sortIssues((cachedState.issues ?? []).map(normalizeIssue)), staff: sortStaff(cachedState.staff ?? []), activityLogs: sortActivityLogs(cachedState.activityLogs ?? []) } satisfies HotelDataState;
 	}
 
 	return { ...EMPTY_STATE, hotelId, isHydrated: false, isLoading: true, isSyncing: true, notifyOn: readStorage<boolean>(NOTIFY_KEY) ?? false } satisfies HotelDataState;
@@ -200,7 +224,6 @@ async function fetchActiveHotel(requestedHotelId?: string | null) {
 		if (error) throw error;
 		if (data) return data as HotelRow;
 	} else if (cachedHotelId) {
-		// Stale non-UUID value from old seed data — remove it
 		window.localStorage.removeItem(ACTIVE_HOTEL_KEY);
 	}
 
@@ -220,7 +243,7 @@ async function fetchInitialData(hotelId: string) {
 	const error = roomsResult.error || issuesResult.error || staffResult.error || activityResult.error;
 	if (error) throw error;
 
-	mergeState({ hotelId, rooms: sortRooms((roomsResult.data as RoomRow[] | null) ?? []), issues: sortIssues((issuesResult.data as IssueRow[] | null) ?? []), staff: sortStaff((staffResult.data as StaffRow[] | null) ?? []), activityLogs: sortActivityLogs((activityResult.data as ActivityLogRow[] | null) ?? []), isHydrated: true, isLoading: false, isSyncing: true, lastError: null, lastSyncedAt: new Date().toISOString() });
+	mergeState({ hotelId, rooms: sortRooms(((roomsResult.data as RoomRow[] | null) ?? []).map(normalizeRoom)), issues: sortIssues(((issuesResult.data as IssueRow[] | null) ?? []).map(normalizeIssue)), staff: sortStaff((staffResult.data as StaffRow[] | null) ?? []), activityLogs: sortActivityLogs((activityResult.data as ActivityLogRow[] | null) ?? []), isHydrated: true, isLoading: false, isSyncing: true, lastError: null, lastSyncedAt: new Date().toISOString() });
 }
 
 function cleanupRealtime() {
@@ -329,10 +352,10 @@ async function flushPendingMutations(hotelId: string) {
 					const returnedRoom = Array.isArray(data) ? (data[0] as RoomRow | undefined) : (data as RoomRow | null);
 					if (returnedRoom) replaceRoom(returnedRoom);
 				} else {
-					const { data, error } = await supabase.rpc("report_issue", { p_hotel_id: mutation.payload.hotelId, p_room_id: mutation.payload.roomId, p_description: mutation.payload.description, p_photo_url: mutation.payload.photoUrl, p_assignee_staff_id: mutation.payload.assigneeId, p_actor_staff_id: mutation.payload.actorId });
+					const { data, error } = await supabase.rpc("report_issue", { p_hotel_id: mutation.payload.hotelId, p_room_id: mutation.payload.roomId, p_description: mutation.payload.description, p_photo_urls: mutation.payload.photoUrls, p_assignee_staff_id: mutation.payload.assigneeId, p_actor_staff_id: mutation.payload.actorId });
 					if (error) throw error;
 					const returnedIssue = Array.isArray(data) ? (data[0] as IssueRow | undefined) : (data as IssueRow | null);
-					if (returnedIssue) replaceIssue(returnedIssue);
+					if (returnedIssue) replaceIssueRemovingTemp(returnedIssue, mutation.tempIssueId);
 				}
 				queue = queue.filter((item) => item.id !== mutation.id);
 			} catch (error) {
@@ -395,19 +418,19 @@ async function updateHotelName(nextName: string) {
 	}
 }
 
-async function createRoom(room: { id: string; name: string; floor: number; status: RoomStatus; note?: string; priority?: boolean }) {
+async function createRoom(room: { id: string; name: string; floor: number; status: RoomStatus; note?: string; priority?: boolean; recouche?: boolean; dnd?: boolean; cleaning_hour?: string }) {
 	if (!state.hotelId) throw new Error("Hotel data has not finished loading yet.");
-	const nextRoom: RoomRow = { id: room.id, hotel_id: state.hotelId, name: room.name, floor: room.floor, status: room.status, assignee_staff_id: null, verifier_staff_id: null, priority: room.priority ?? false, note: room.note ?? "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+	const nextRoom: RoomRow = { id: room.id, hotel_id: state.hotelId, name: room.name, floor: room.floor, status: room.status, assignee_staff_id: null, verifier_staff_id: null, priority: room.priority ?? false, note: room.note ?? "", recouche: room.recouche ?? false, dnd: room.dnd ?? false, cleaning_hour: room.cleaning_hour ?? "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
 	replaceRoom(nextRoom);
 	const { error } = await supabase.from("rooms").insert(nextRoom);
 	if (error && !isNetworkFailure(error)) throw error;
 }
 
-async function saveRoom(room: { id: string; name: string; floor: number; status: RoomStatus; assignee?: string | null; verifier?: string | null; priority?: boolean; note?: string }) {
+async function saveRoom(room: { id: string; name: string; floor: number; status: RoomStatus; assignee?: string | null; verifier?: string | null; priority?: boolean; note?: string; recouche?: boolean; dnd?: boolean; cleaningHour?: string }) {
 	const existing = state.rooms.find((item) => item.id === room.id);
-	if (!existing) return createRoom({ id: room.id, name: room.name, floor: room.floor, status: room.status, note: room.note, priority: room.priority });
+	if (!existing) return createRoom({ id: room.id, name: room.name, floor: room.floor, status: room.status, note: room.note, priority: room.priority, recouche: room.recouche, dnd: room.dnd, cleaning_hour: room.cleaningHour });
 	if (!state.hotelId) throw new Error("Hotel data has not finished loading yet.");
-	const patch: Partial<RoomRow> = { name: room.name, floor: room.floor, status: room.status, assignee_staff_id: room.assignee ?? null, verifier_staff_id: room.verifier ?? null, priority: room.priority ?? false, note: room.note ?? "", updated_at: new Date().toISOString() };
+	const patch: Partial<RoomRow> = { name: room.name, floor: room.floor, status: room.status, assignee_staff_id: room.assignee ?? null, verifier_staff_id: room.verifier ?? null, priority: room.priority ?? false, note: room.note ?? "", recouche: room.recouche ?? false, dnd: room.dnd ?? false, cleaning_hour: room.cleaningHour ?? "", updated_at: new Date().toISOString() };
 	replaceRoom({ ...existing, ...patch } as RoomRow);
 	const { error } = await supabase.from("rooms").update(patch).eq("id", room.id).eq("hotel_id", state.hotelId);
 	if (error) {
@@ -476,6 +499,22 @@ async function togglePriority(roomId: string) {
 	await updateRoomRow(roomId, { priority: !previous.priority });
 }
 
+async function toggleRecouche(roomId: string) {
+	const previous = state.rooms.find((room) => room.id === roomId);
+	if (!previous) return;
+	await updateRoomRow(roomId, { recouche: !previous.recouche });
+}
+
+async function toggleDnd(roomId: string) {
+	const previous = state.rooms.find((room) => room.id === roomId);
+	if (!previous) return;
+	await updateRoomRow(roomId, { dnd: !previous.dnd });
+}
+
+async function setCleaningHour(roomId: string, hour: string) {
+	await updateRoomRow(roomId, { cleaning_hour: hour });
+}
+
 async function updateNote(roomId: string, note: string) {
 	await updateRoomRow(roomId, { note });
 }
@@ -514,19 +553,20 @@ async function updateRoomStatus(hotelId: string, roomId: string, newStatus: Upda
 	writeStorage(queueKey(hotelId), queue);
 }
 
-async function reportIssue(hotelId: string, roomId: string, description: string, photoUrl: string | null, assigneeId: string | null, actorId: string | null) {
+async function reportIssue(hotelId: string, roomId: string, description: string, photoUrls: string[], assigneeId: string | null, actorId: string | null) {
 	await bootstrapHotelData(hotelId);
 	const tempIssueId = uid();
-	const tempIssue: IssueRow = { id: tempIssueId, hotel_id: hotelId, room_id: roomId, description, photo_url: photoUrl, assignee_staff_id: assigneeId, resolved: false, resolved_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+	const tempIssue: IssueRow = { id: tempIssueId, hotel_id: hotelId, room_id: roomId, description, photo_url: null, photo_urls: photoUrls, assignee_staff_id: assigneeId, resolved: false, resolved_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
 	replaceIssue(tempIssue);
-	const mutation: PendingMutation = { id: uid(), kind: "reportIssue", payload: { hotelId, roomId, description, photoUrl, assigneeId, actorId }, tempIssueId };
+	const mutation: PendingMutation = { id: uid(), kind: "reportIssue", payload: { hotelId, roomId, description, photoUrls, assigneeId, actorId }, tempIssueId };
 	queue = [...queue.filter((item) => item.id !== mutation.id), mutation];
 	schedulePersist();
 	try {
-		const { data, error } = await supabase.rpc("report_issue", { p_hotel_id: hotelId, p_room_id: roomId, p_description: description, p_photo_url: photoUrl, p_assignee_staff_id: assigneeId, p_actor_staff_id: actorId });
+		const { data, error } = await supabase.rpc("report_issue", { p_hotel_id: hotelId, p_room_id: roomId, p_description: description, p_photo_urls: photoUrls, p_assignee_staff_id: assigneeId, p_actor_staff_id: actorId });
 		if (error) throw error;
 		const returnedIssue = Array.isArray(data) ? (data[0] as IssueRow | undefined) : (data as IssueRow | null);
-		if (returnedIssue) replaceIssue(returnedIssue);
+		if (returnedIssue) replaceIssueRemovingTemp(returnedIssue, tempIssueId);
+		else mergeState({ issues: state.issues.filter((i) => i.id !== tempIssueId) });
 		queue = queue.filter((item) => item.id !== mutation.id);
 	} catch (error) {
 		if (!isNetworkFailure(error)) {
@@ -570,6 +610,5 @@ export function useHotelData(hotelId?: string | null) {
 		void bootstrapHotelData(hotelId ?? undefined);
 	}, [hotelId]);
 
-	return { ...snapshot, updateRoomStatus, reportIssue, saveRoom, createRoom, deleteRoom, addStaff, deleteStaff, assignRoom, assignVerifier, togglePriority, updateNote, assignIssue, resolveIssue, renameHotel, resetLocalCache, toggleNotify, refreshHotelData };
+	return { ...snapshot, updateRoomStatus, reportIssue, saveRoom, createRoom, deleteRoom, addStaff, deleteStaff, assignRoom, assignVerifier, togglePriority, toggleRecouche, toggleDnd, setCleaningHour, updateNote, assignIssue, resolveIssue, renameHotel, resetLocalCache, toggleNotify, refreshHotelData };
 }
-

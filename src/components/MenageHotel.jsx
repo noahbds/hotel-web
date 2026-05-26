@@ -3,12 +3,12 @@ import {
   Plus, Wrench, Bell, Check, X, Trash2, Pencil, ChevronRight,
   Camera, BedDouble, ClipboardCheck, Sparkles, AlertTriangle,
   Building2, ArrowLeft, Image as ImageIcon, CheckCircle2, Clock,
-  Users, UserPlus, User,
+  Users, UserPlus, User, Moon, RefreshCw,
 } from "lucide-react";
 import { useHotelData } from "../store/useHotelData";
 
 /* ------------------------------------------------------------------ */
-/*  Configuration des statuts (cycle métier : Sale → Propre → Contrôlée) */
+/*  Statuts                                                             */
 /* ------------------------------------------------------------------ */
 const STATUS = {
   sale: {
@@ -31,7 +31,7 @@ const ORDER = ["sale", "propre", "controlee"];
 const nextStatus = (s) => ORDER[(ORDER.indexOf(s) + 1) % ORDER.length];
 
 /* ------------------------------------------------------------------ */
-/*  Rôles du personnel                                                 */
+/*  Rôles du personnel                                                  */
 /* ------------------------------------------------------------------ */
 const ROLES = {
   chambre:     { label: "Chambre",     full: "Femme / valet de chambre", bg: "bg-violet-50", text: "text-violet-700", dot: "bg-violet-500" },
@@ -40,22 +40,17 @@ const ROLES = {
   reception:   { label: "Réception",   full: "Réception",                bg: "bg-teal-50",   text: "text-teal-700",   dot: "bg-teal-500" },
 };
 const ROLE_KEYS = ["chambre", "gouvernante", "maintenance", "reception"];
-// Qui peut être assigné au ménage d'une chambre / à une réparation / à la vérif
 const CLEANING_ROLES = ["chambre", "gouvernante"];
 const REPAIR_ROLES = ["maintenance"];
 const VERIFY_ROLES = ["gouvernante", "reception"];
 
 /* ------------------------------------------------------------------ */
-/*  Données de démonstration (au premier lancement)                    */
-/* ------------------------------------------------------------------ */
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
+/*  Helpers                                                             */
 /* ------------------------------------------------------------------ */
 const uid = () => crypto.randomUUID();
 
 function sanitizeErrorMessage(msg) {
   if (!msg) return null;
-  // Don't expose raw DB/network error internals to the user
   if (/violates|constraint|relation|syntax|42[A-Z0-9]{3}|ERROR:|SQLSTATE|socket|fetch|ECONN|ENOTFOUND/i.test(msg)) {
     return "Une erreur s'est produite. Veuillez réessayer.";
   }
@@ -76,7 +71,6 @@ function relTime(ts) {
   return `il y a ${d} j`;
 }
 
-// Compresse une photo en miniature pour tenir dans le stockage
 function compressImage(file, maxSize = 900, quality = 0.55) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -105,14 +99,14 @@ function compressImage(file, maxSize = 900, quality = 0.55) {
 }
 
 /* ================================================================== */
-/*  APP                                                                */
+/*  APP                                                                 */
 /* ================================================================== */
 export default function App() {
   const hotel = useHotelData();
-  const [tab, setTab] = useState("rooms");          // rooms | maintenance | activity
-  const [openRoomId, setOpenRoomId] = useState(null);   // chambre ouverte (fiche)
-  const [adding, setAdding] = useState(false);      // formulaire ajout
-  const [filter, setFilter] = useState("all");      // all | sale | propre | controlee
+  const [tab, setTab] = useState("rooms");
+  const [openRoomId, setOpenRoomId] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [filter, setFilter] = useState("all");
   const [toast, setToast] = useState(null);
   const showToast = useCallback((msg) => {
     setToast(msg);
@@ -132,6 +126,9 @@ export default function App() {
       assignee: room.assignee_staff_id,
       verifier: room.verifier_staff_id,
       priority: room.priority,
+      recouche: room.recouche ?? false,
+      dnd: room.dnd ?? false,
+      cleaningHour: room.cleaning_hour ?? "",
       note: room.note,
       updatedAt: new Date(room.updated_at).getTime(),
     }));
@@ -146,7 +143,7 @@ export default function App() {
         roomId: issue.room_id,
         roomName: roomNameById.get(issue.room_id) || issue.room_id,
         desc: issue.description,
-        photo: issue.photo_url,
+        photos: issue.photo_urls?.length ? issue.photo_urls : (issue.photo_url ? [issue.photo_url] : []),
         assignee: issue.assignee_staff_id,
         ts: new Date(issue.created_at).getTime(),
         resolved: issue.resolved,
@@ -193,6 +190,9 @@ export default function App() {
         assignee: room.assignee || null,
         verifier: room.verifier || null,
         priority: Boolean(room.priority),
+        recouche: Boolean(room.recouche),
+        dnd: Boolean(room.dnd),
+        cleaningHour: room.cleaningHour ?? "",
         note: (room.note ?? "").trim(),
       });
       showToast(exists ? "Chambre modifiée" : "Chambre ajoutée");
@@ -212,16 +212,15 @@ export default function App() {
     }
   };
 
-  const reportIssue = async (room, desc, photo, assignee) => {
+  const reportIssue = async (room, desc, photos, assignee) => {
     try {
-      await hotel.reportIssue(data.hotelId, room.id, desc, photo, assignee || null, null);
+      await hotel.reportIssue(data.hotelId, room.id, desc, photos, assignee || null, null);
       showToast("Problème signalé");
     } catch (e) { console.error(e);
       showToast("Signalement impossible");
     }
   };
 
-  /* ---- Équipe & attributions ---- */
   const addStaff = async (name, role) => {
     try {
       await hotel.addStaff(name, role);
@@ -241,69 +240,58 @@ export default function App() {
   };
 
   const assignRoom = async (room, staffId) => {
-    try {
-      await hotel.assignRoom(room.id, staffId);
-    } catch (e) { console.error(e);
-      showToast("Attribution impossible");
-    }
+    try { await hotel.assignRoom(room.id, staffId); }
+    catch (e) { console.error(e); showToast("Attribution impossible"); }
   };
 
   const assignVerifier = async (room, staffId) => {
-    try {
-      await hotel.assignVerifier(room.id, staffId);
-    } catch (e) { console.error(e);
-      showToast("Attribution impossible");
-    }
+    try { await hotel.assignVerifier(room.id, staffId); }
+    catch (e) { console.error(e); showToast("Attribution impossible"); }
   };
 
   const togglePriority = async (room) => {
-    try {
-      await hotel.togglePriority(room.id);
-    } catch (e) { console.error(e);
-      showToast("Mise à jour impossible");
-    }
+    try { await hotel.togglePriority(room.id); }
+    catch (e) { console.error(e); showToast("Mise à jour impossible"); }
+  };
+
+  const toggleRecouche = async (room) => {
+    try { await hotel.toggleRecouche(room.id); }
+    catch (e) { console.error(e); showToast("Mise à jour impossible"); }
+  };
+
+  const toggleDnd = async (room) => {
+    try { await hotel.toggleDnd(room.id); }
+    catch (e) { console.error(e); showToast("Mise à jour impossible"); }
+  };
+
+  const setCleaningHour = async (room, hour) => {
+    try { await hotel.setCleaningHour(room.id, hour); }
+    catch (e) { console.error(e); showToast("Heure impossible à enregistrer"); }
   };
 
   const updateNote = async (room, note) => {
-    try {
-      await hotel.updateNote(room.id, note);
-    } catch (e) { console.error(e);
-      showToast("Note impossible à enregistrer");
-    }
+    try { await hotel.updateNote(room.id, note); }
+    catch (e) { console.error(e); showToast("Note impossible à enregistrer"); }
   };
 
   const renameHotel = async (hotelName) => {
-    try {
-      await hotel.renameHotel(hotelName);
-    } catch (e) { console.error(e);
-      showToast("Nom impossible à enregistrer");
-    }
+    try { await hotel.renameHotel(hotelName); }
+    catch (e) { console.error(e); showToast("Nom impossible à enregistrer"); }
   };
 
   const resetData = async () => {
-    try {
-      await hotel.resetLocalCache();
-      showToast("Cache local réinitialisé");
-    } catch (e) { console.error(e);
-      showToast("Réinitialisation impossible");
-    }
+    try { await hotel.resetLocalCache(); showToast("Cache local réinitialisé"); }
+    catch (e) { console.error(e); showToast("Réinitialisation impossible"); }
   };
 
   const assignIssue = async (issue, staffId) => {
-    try {
-      await hotel.assignIssue(issue.id, staffId);
-    } catch (e) { console.error(e);
-      showToast("Attribution impossible");
-    }
+    try { await hotel.assignIssue(issue.id, staffId); }
+    catch (e) { console.error(e); showToast("Attribution impossible"); }
   };
 
   const resolveIssue = async (issue) => {
-    try {
-      await hotel.resolveIssue(issue.id);
-      showToast("Réparé");
-    } catch (e) { console.error(e);
-      showToast("Mise à jour impossible");
-    }
+    try { await hotel.resolveIssue(issue.id); showToast("Réparé"); }
+    catch (e) { console.error(e); showToast("Mise à jour impossible"); }
   };
 
   const toggleNotify = async () => {
@@ -314,7 +302,6 @@ export default function App() {
     await hotel.toggleNotify();
   };
 
-  /* ---- Écran de chargement ---- */
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-stone-100 text-stone-400"
@@ -330,10 +317,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-stone-100 flex justify-center"
       style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif" }}>
-      {/* Cadre type téléphone */}
       <div className="w-full max-w-md bg-stone-50 min-h-screen relative shadow-xl flex flex-col">
 
-        {/* ---------- En-tête ---------- */}
+        {/* En-tête */}
         <header className="px-5 pt-6 pb-3 bg-white border-b border-stone-100 sticky top-0 z-20">
           <div className="flex items-center justify-between">
             <div>
@@ -353,7 +339,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Récap réception */}
           <div className="flex gap-2 mt-3">
             {ORDER.map((s) => {
               const C = STATUS[s];
@@ -370,7 +355,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* ---------- Contenu ---------- */}
+        {/* Contenu */}
         <main className="flex-1 overflow-y-auto pb-28">
           {tab === "rooms" && (
             <RoomsTab
@@ -389,7 +374,6 @@ export default function App() {
           )}
         </main>
 
-        {/* ---------- Bouton d'ajout (sur l'onglet chambres) ---------- */}
         {tab === "rooms" && (
           <button
             onClick={() => setAdding(true)}
@@ -399,7 +383,6 @@ export default function App() {
           </button>
         )}
 
-        {/* ---------- Barre d'onglets ---------- */}
         <nav className="absolute bottom-0 inset-x-0 bg-white/90 backdrop-blur border-t border-stone-200 flex z-30"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
           <TabBtn active={tab === "rooms"} onClick={() => setTab("rooms")} Icon={BedDouble} label="Chambres" />
@@ -408,18 +391,17 @@ export default function App() {
           <TabBtn active={tab === "activity"} onClick={() => setTab("activity")} Icon={Bell} label="Activité" />
         </nav>
 
-        {/* ---------- Fiche chambre ---------- */}
         {openRoom && (
           <RoomSheet
             room={openRoom} data={data} onClose={() => setOpenRoomId(null)}
             onSetStatus={setStatus} onSave={saveRoom} onDelete={deleteRoom}
             onReport={reportIssue} onAssign={assignRoom} onVerifier={assignVerifier}
-            onTogglePriority={togglePriority} onNote={updateNote}
+            onTogglePriority={togglePriority} onToggleRecouche={toggleRecouche}
+            onToggleDnd={toggleDnd} onCleaningHour={setCleaningHour} onNote={updateNote}
             issues={data.issues.filter((i) => i.roomId === openRoom.id && !i.resolved)}
           />
         )}
 
-        {/* ---------- Ajout d'une chambre ---------- */}
         {adding && (
           <AddRoomSheet
             onClose={() => setAdding(false)}
@@ -427,7 +409,6 @@ export default function App() {
           />
         )}
 
-        {/* ---------- Toast ---------- */}
         {toast && (
           <button
             onClick={() => setToast(null)}
@@ -443,34 +424,45 @@ export default function App() {
 }
 
 /* ================================================================== */
-/*  Onglet CHAMBRES                                                    */
+/*  Onglet CHAMBRES                                                     */
 /* ================================================================== */
 function RoomsTab({ data, filter, setFilter, onCycle, onOpen }) {
   const [q, setQ] = useState("");
   const query = q.trim().toLowerCase();
   let rooms = data.rooms;
   if (filter === "depart") rooms = rooms.filter((r) => r.priority);
+  else if (filter === "recouche") rooms = rooms.filter((r) => r.recouche);
+  else if (filter === "dnd") rooms = rooms.filter((r) => r.dnd);
   else if (filter !== "all") rooms = rooms.filter((r) => r.status === filter);
   if (query) rooms = rooms.filter((r) => r.name.toLowerCase().includes(query));
-  // priorité (départs) d'abord, puis ordre des chambres
   rooms = [...rooms].sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0));
   const floors = [...new Set(rooms.map((r) => r.floor))].sort((a, b) => a - b);
   const issueByRoom = (id) => data.issues.some((i) => i.roomId === id && !i.resolved);
   const departCount = data.rooms.filter((r) => r.priority).length;
+  const recoucheCount = data.rooms.filter((r) => r.recouche).length;
+  const dndCount = data.rooms.filter((r) => r.dnd).length;
 
   return (
     <div>
-      {/* Recherche */}
       <div className="px-5 pt-3">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une chambre…" maxLength={100}
           className="w-full bg-white border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-stone-400" />
       </div>
-      {/* Filtres */}
       <div className="flex gap-2 px-5 py-3 overflow-x-auto">
         <Chip active={filter === "all"} onClick={() => setFilter("all")}>Toutes</Chip>
         {departCount > 0 && (
           <Chip active={filter === "depart"} onClick={() => setFilter("depart")} dot="bg-orange-500">
             Départs ({departCount})
+          </Chip>
+        )}
+        {recoucheCount > 0 && (
+          <Chip active={filter === "recouche"} onClick={() => setFilter("recouche")} dot="bg-indigo-500">
+            Recouches ({recoucheCount})
+          </Chip>
+        )}
+        {dndCount > 0 && (
+          <Chip active={filter === "dnd"} onClick={() => setFilter("dnd")} dot="bg-rose-400">
+            DND ({dndCount})
           </Chip>
         )}
         {ORDER.map((s) => (
@@ -482,7 +474,7 @@ function RoomsTab({ data, filter, setFilter, onCycle, onOpen }) {
 
       {rooms.length === 0 && (
         <p className="text-center text-stone-400 text-sm mt-16 px-8">
-          {query ? "Aucune chambre ne correspond." : <>Aucune chambre ici. Touchez le bouton <span className="font-semibold">+</span> pour en ajouter une.</>}
+          {query ? "Aucune chambre ne correspond." : <>Aucune chambre ici. Touchez <span className="font-semibold">+</span> pour en ajouter une.</>}
         </p>
       )}
 
@@ -497,33 +489,43 @@ function RoomsTab({ data, filter, setFilter, onCycle, onOpen }) {
               const C = STATUS[room.status];
               return (
                 <div key={room.id}
-                  className={`flex items-center bg-white rounded-2xl mb-2 pl-4 pr-2 py-2.5 active:bg-stone-50 transition ${room.priority ? "ring-1 ring-orange-200" : ""}`}>
-                  {/* zone tappable : ouvre la fiche */}
+                  className={`flex items-center bg-white rounded-2xl mb-2 pl-4 pr-2 py-2.5 active:bg-stone-50 transition ${room.priority ? "ring-1 ring-orange-200" : room.recouche ? "ring-1 ring-indigo-200" : ""}`}>
                   <button onClick={() => onOpen(room)} className="flex items-center flex-1 min-w-0 text-left">
-                    <div className="w-11 h-11 rounded-xl bg-stone-100 flex items-center justify-center mr-3 shrink-0">
+                    <div className="w-11 h-11 rounded-xl bg-stone-100 flex items-center justify-center mr-3 shrink-0 relative">
                       <BedDouble size={20} className="text-stone-500" />
+                      {room.dnd && (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center">
+                          <Moon size={9} className="text-white" />
+                        </span>
+                      )}
                     </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="font-semibold text-stone-800 truncate">{room.name}</p>
                         {room.priority && (
                           <span className="text-[10px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-md shrink-0">DÉPART</span>
+                        )}
+                        {room.recouche && (
+                          <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-md shrink-0">RECOUCHE</span>
+                        )}
+                        {room.dnd && (
+                          <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md shrink-0">DND</span>
                         )}
                       </div>
                       <p className="text-xs text-stone-400 flex items-center gap-1 truncate">
                         {staffName(data, room.assignee)
                           ? <><User size={11} className="shrink-0" />{staffName(data, room.assignee)}</>
                           : C.verb}
+                        {room.cleaningHour && !room.dnd && <span className="text-stone-400">· {room.cleaningHour}</span>}
                         {room.note ? <span className="text-stone-400">· 📝 {room.note}</span> : null}
                       </p>
                     </div>
                     {issueByRoom(room.id) && (
                       <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md shrink-0">
-                        <Wrench size={11} /> 
+                        <Wrench size={11} />
                       </span>
                     )}
                   </button>
-                  {/* pastille de statut : un tap = statut suivant */}
                   <button onClick={() => onCycle(room)}
                     className={`shrink-0 flex items-center gap-1.5 ${C.bg} ${C.text} ${C.border} border rounded-full pl-2.5 pr-3 py-1.5 active:scale-95 transition`}>
                     <span className={`w-2 h-2 rounded-full ${C.dot}`} />
@@ -540,13 +542,13 @@ function RoomsTab({ data, filter, setFilter, onCycle, onOpen }) {
 }
 
 /* ================================================================== */
-/*  Onglet MAINTENANCE                                                 */
+/*  Onglet MAINTENANCE                                                  */
 /* ================================================================== */
 function MaintenanceTab({ data, onResolve, onAssign }) {
   const issues = data.issues;
   const open = issues.filter((i) => !i.resolved);
   const done = issues.filter((i) => i.resolved);
-  const [photo, setPhoto] = useState(null);
+  const [lightbox, setLightbox] = useState(null); // { photos, index }
 
   return (
     <div className="px-4 pt-4">
@@ -563,35 +565,56 @@ function MaintenanceTab({ data, onResolve, onAssign }) {
       {open.length > 0 && (
         <>
           <SectionTitle>À traiter ({open.length})</SectionTitle>
-          {open.map((i) => <IssueCard key={i.id} issue={i} data={data} onResolve={onResolve} onAssign={onAssign} onPhoto={setPhoto} />)}
+          {open.map((i) => <IssueCard key={i.id} issue={i} data={data} onResolve={onResolve} onAssign={onAssign} onOpenLightbox={setLightbox} />)}
         </>
       )}
       {done.length > 0 && (
         <>
           <SectionTitle>Réparé ({done.length})</SectionTitle>
-          {done.map((i) => <IssueCard key={i.id} issue={i} data={data} onPhoto={setPhoto} />)}
+          {done.map((i) => <IssueCard key={i.id} issue={i} data={data} onOpenLightbox={setLightbox} />)}
         </>
       )}
 
-      {/* Visionneuse photo plein écran */}
-      {photo && (
-        <div onClick={() => setPhoto(null)}
-          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
-          <img src={photo} alt="" className="max-h-full max-w-full rounded-xl" />
+      {lightbox && (
+        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
+          <div className="flex items-center justify-between px-4 pt-4 pb-2">
+            <span className="text-white/60 text-sm">{lightbox.index + 1} / {lightbox.photos.length}</span>
+            <button onClick={() => setLightbox(null)} className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
+              <X size={18} className="text-white" />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4">
+            <img src={lightbox.photos[lightbox.index]} alt="" className="max-h-full max-w-full rounded-xl" />
+          </div>
+          {lightbox.photos.length > 1 && (
+            <div className="flex justify-center gap-2 pb-6">
+              {lightbox.photos.map((_, idx) => (
+                <button key={idx} onClick={() => setLightbox({ ...lightbox, index: idx })}
+                  className={`w-2 h-2 rounded-full transition ${idx === lightbox.index ? "bg-white" : "bg-white/30"}`} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function IssueCard({ issue, data, onResolve, onAssign, onPhoto }) {
+function IssueCard({ issue, data, onResolve, onAssign, onOpenLightbox }) {
   const techs = data.staff.filter((s) => REPAIR_ROLES.includes(s.role));
   const assigned = staffName(data, issue.assignee);
+  const firstPhoto = issue.photos?.[0] ?? null;
+  const extraCount = (issue.photos?.length ?? 0) - 1;
   return (
     <div className={`bg-white rounded-2xl p-3 mb-2.5 flex gap-3 ${issue.resolved ? "opacity-60" : ""}`}>
-      {issue.photo ? (
-        <button onClick={() => onPhoto(issue.photo)} className="shrink-0">
-          <img src={issue.photo} alt="" className="w-16 h-16 rounded-xl object-cover" />
+      {firstPhoto ? (
+        <button onClick={() => onOpenLightbox?.({ photos: issue.photos, index: 0 })} className="shrink-0 relative">
+          <img src={firstPhoto} alt="" className="w-16 h-16 rounded-xl object-cover" />
+          {extraCount > 0 && (
+            <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">
+              +{extraCount}
+            </span>
+          )}
         </button>
       ) : (
         <div className="w-16 h-16 rounded-xl bg-stone-100 flex items-center justify-center shrink-0">
@@ -605,7 +628,6 @@ function IssueCard({ issue, data, onResolve, onAssign, onPhoto }) {
         </div>
         <p className="text-sm text-stone-600 mt-0.5 break-words">{issue.desc}</p>
 
-        {/* Attribution du technicien */}
         {!issue.resolved && onAssign && (
           <div className="flex flex-wrap gap-1.5 mt-2">
             {techs.length === 0 && (
@@ -644,14 +666,12 @@ function IssueCard({ issue, data, onResolve, onAssign, onPhoto }) {
 }
 
 /* ================================================================== */
-/*  Onglet ACTIVITÉ                                                    */
+/*  Onglet ACTIVITÉ                                                     */
 /* ================================================================== */
 function ActivityTab({ data, onToggleNotify, onRename, onReset }) {
   const [hotelName, setHotelName] = useState(data.hotelName);
   const [confirmReset, setConfirmReset] = useState(false);
-  useEffect(() => {
-    setHotelName(data.hotelName);
-  }, [data.hotelName]);
+  useEffect(() => { setHotelName(data.hotelName); }, [data.hotelName]);
   const iconFor = (e) => {
     if (e.type === "issue") return <Wrench size={16} className="text-amber-600" />;
     if (e.type === "resolved") return <CheckCircle2 size={16} className="text-emerald-600" />;
@@ -662,7 +682,6 @@ function ActivityTab({ data, onToggleNotify, onRename, onReset }) {
   };
   return (
     <div className="px-4 pt-4">
-      {/* Réglage notifications */}
       <div className="bg-white rounded-2xl p-4 mb-4 flex items-center justify-between">
         <div className="flex-1 pr-3">
           <p className="font-semibold text-stone-800 text-[15px]">Notifications</p>
@@ -674,7 +693,6 @@ function ActivityTab({ data, onToggleNotify, onRename, onReset }) {
         </button>
       </div>
 
-      {/* Réglages */}
       <div className="bg-white rounded-2xl p-4 mb-4">
         <p className="font-semibold text-stone-800 text-[15px] mb-2">Réglages</p>
         <label className="text-xs text-stone-400 font-medium">Nom de l'hôtel</label>
@@ -710,7 +728,7 @@ function ActivityTab({ data, onToggleNotify, onRename, onReset }) {
 }
 
 /* ================================================================== */
-/*  Onglet ÉQUIPE                                                      */
+/*  Onglet ÉQUIPE                                                       */
 /* ================================================================== */
 function TeamTab({ data, onAdd, onDelete }) {
   const [adding, setAdding] = useState(false);
@@ -803,33 +821,38 @@ function TeamTab({ data, onAdd, onDelete }) {
 }
 
 /* ================================================================== */
-/*  Fiche d'une chambre (bottom sheet)                                 */
+/*  Fiche d'une chambre                                                 */
 /* ================================================================== */
-function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onReport, onAssign, onVerifier, onTogglePriority, onNote, issues }) {
+function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onReport, onAssign, onVerifier, onTogglePriority, onToggleRecouche, onToggleDnd, onCleaningHour, onNote, issues }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(room.name);
   const [floor, setFloor] = useState(String(room.floor));
   const [note, setNote] = useState(room.note || "");
   const [showReport, setShowReport] = useState(false);
   const [desc, setDesc] = useState("");
-  const [photo, setPhoto] = useState(null);
+  const [photos, setPhotos] = useState([]);
   const [tech, setTech] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
   const fileRef = useRef();
 
   const cleaners = data.staff.filter((s) => CLEANING_ROLES.includes(s.role));
   const verifiers = data.staff.filter((s) => VERIFY_ROLES.includes(s.role));
   const techs = data.staff.filter((s) => REPAIR_ROLES.includes(s.role));
 
-  const handlePhoto = async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
+  const handlePhotos = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     try {
-      setPhoto(await compressImage(f));
+      const compressed = await Promise.all(files.map((f) => compressImage(f)));
+      setPhotos((prev) => [...prev, ...compressed].slice(0, 4));
     } catch {
-      // Photo stays null; user can try again
+      // stays empty; user can retry
     }
+    e.target.value = "";
   };
+
+  const removePhoto = (idx) => setPhotos((prev) => prev.filter((_, i) => i !== idx));
 
   const submitEdit = () => {
     if (!name.trim()) return;
@@ -839,8 +862,8 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
 
   const submitReport = () => {
     if (!desc.trim()) return;
-    onReport(room, desc.trim(), photo, tech);
-    setDesc(""); setPhoto(null); setTech(null); setShowReport(false);
+    onReport(room, desc.trim(), photos, tech);
+    setDesc(""); setPhotos([]); setTech(null); setShowReport(false);
   };
 
   const C = STATUS[room.status];
@@ -878,17 +901,48 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
         </div>
       )}
 
-      {/* Priorité départ */}
-      <button onClick={() => onTogglePriority(room)}
-        className={`w-full flex items-center justify-between rounded-2xl px-4 py-3 mb-4 border-2 transition active:scale-[0.99] ${
-          room.priority ? "bg-orange-50 border-orange-300" : "bg-white border-stone-200"}`}>
-        <span className={`text-sm font-semibold ${room.priority ? "text-orange-700" : "text-stone-600"}`}>
-          🚪 Départ aujourd'hui {room.priority ? "· prioritaire" : ""}
-        </span>
-        <span className={`w-11 h-6 rounded-full relative transition ${room.priority ? "bg-orange-500" : "bg-stone-200"}`}>
-          <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${room.priority ? "left-[22px]" : "left-0.5"}`} />
-        </span>
-      </button>
+      {/* --- Toggles opérationnels --- */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        {/* Départ */}
+        <button onClick={() => onTogglePriority(room)}
+          className={`flex items-center justify-between rounded-2xl px-4 py-3 border-2 transition active:scale-[0.99] ${
+            room.priority ? "bg-orange-50 border-orange-300" : "bg-white border-stone-200"}`}>
+          <span className={`text-sm font-semibold ${room.priority ? "text-orange-700" : "text-stone-600"}`}>🚪 Départ</span>
+          <ToggleDot on={room.priority} color="bg-orange-500" />
+        </button>
+
+        {/* Recouche */}
+        <button onClick={() => onToggleRecouche(room)}
+          className={`flex items-center justify-between rounded-2xl px-4 py-3 border-2 transition active:scale-[0.99] ${
+            room.recouche ? "bg-indigo-50 border-indigo-300" : "bg-white border-stone-200"}`}>
+          <span className={`text-sm font-semibold ${room.recouche ? "text-indigo-700" : "text-stone-600"}`}>🛏 Recouche</span>
+          <ToggleDot on={room.recouche} color="bg-indigo-500" />
+        </button>
+      </div>
+
+      {/* DND + heure de ménage */}
+      <div className={`rounded-2xl border-2 px-4 py-3 mb-4 transition ${room.dnd ? "bg-rose-50 border-rose-300" : "bg-white border-stone-200"}`}>
+        <div className="flex items-center justify-between">
+          <span className={`text-sm font-semibold ${room.dnd ? "text-rose-700" : "text-stone-600"}`}>
+            <Moon size={14} className="inline mr-1.5 -mt-0.5" />Ne pas déranger
+          </span>
+          <button onClick={() => onToggleDnd(room)} aria-label="Basculer ne pas déranger">
+            <ToggleDot on={room.dnd} color="bg-rose-500" />
+          </button>
+        </div>
+        {!room.dnd && (
+          <div className="mt-2.5 flex items-center gap-2">
+            <Clock size={13} className="text-stone-400 shrink-0" />
+            <label className="text-xs text-stone-400 font-medium shrink-0">Heure souhaitée</label>
+            <input
+              type="time"
+              value={room.cleaningHour || ""}
+              onChange={(e) => onCleaningHour(room, e.target.value)}
+              className="ml-auto bg-stone-100 rounded-lg px-2 py-1 text-sm outline-none w-28 text-right"
+            />
+          </div>
+        )}
+      </div>
 
       {/* Note (lecture rapide) */}
       {room.note && !editing && (
@@ -914,7 +968,7 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
         })}
       </div>
 
-      {/* Personne assignée au ménage */}
+      {/* Assignée à */}
       <p className="text-xs uppercase tracking-wider text-stone-400 font-semibold mb-2">Assignée à</p>
       <div className="flex flex-wrap gap-1.5 mb-5">
         {cleaners.length === 0 && (
@@ -933,7 +987,7 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
         })}
       </div>
 
-      {/* Personne qui vérifie / contrôle */}
+      {/* Vérifiée par */}
       <p className="text-xs uppercase tracking-wider text-stone-400 font-semibold mb-2">Vérifiée par</p>
       <div className="flex flex-wrap gap-1.5 mb-5">
         {verifiers.length === 0 && (
@@ -975,7 +1029,7 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
           <textarea value={desc} onChange={(e) => setDesc(e.target.value)} maxLength={1000}
             placeholder="Ex. : robinet qui fuit, ampoule grillée…" rows={2}
             className="w-full bg-white rounded-xl px-3 py-2.5 outline-none text-sm resize-none mb-2" />
-          {/* Assigner à un technicien (optionnel) */}
+
           {techs.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2">
               <span className="text-[12px] text-stone-400 w-full">Confier à (optionnel) :</span>
@@ -991,12 +1045,30 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
               })}
             </div>
           )}
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} className="hidden" />
+
+          {/* Vignettes des photos ajoutées */}
+          {photos.length > 0 && (
+            <div className="flex gap-2 mb-2 flex-wrap">
+              {photos.map((p, idx) => (
+                <div key={idx} className="relative">
+                  <button onClick={() => setLightbox({ photos, index: idx })}>
+                    <img src={p} alt="" className="w-14 h-14 rounded-lg object-cover" />
+                  </button>
+                  <button onClick={() => removePhoto(idx)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-stone-800 rounded-full flex items-center justify-center">
+                    <X size={10} className="text-white" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple onChange={handlePhotos} className="hidden" />
           <div className="flex gap-2">
-            <button onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 bg-white text-stone-600 text-sm font-medium px-3 py-2 rounded-xl">
-              {photo ? <img src={photo} className="w-6 h-6 rounded object-cover" alt="" /> : <Camera size={16} />}
-              {photo ? "Photo ajoutée" : "Photo"}
+            <button onClick={() => fileRef.current?.click()} disabled={photos.length >= 4}
+              className={`flex items-center gap-2 bg-white text-stone-600 text-sm font-medium px-3 py-2 rounded-xl ${photos.length >= 4 ? "opacity-40" : ""}`}>
+              <Camera size={16} />
+              {photos.length > 0 ? `${photos.length}/4` : "Photos"}
             </button>
             <button onClick={submitReport} disabled={!desc.trim()}
               className="flex-1 bg-stone-800 text-white text-sm font-semibold rounded-xl py-2 disabled:opacity-40 active:scale-[0.98] transition">
@@ -1025,12 +1097,34 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
             className="flex-1 bg-rose-500 text-white font-semibold py-2.5 rounded-2xl text-sm">Confirmer</button>
         </div>
       )}
+
+      {/* Visionneuse photos inline */}
+      {lightbox && (
+        <div className="fixed inset-0 bg-black/95 z-50 flex flex-col" onClick={() => setLightbox(null)}>
+          <div className="flex items-center justify-end px-4 pt-4 pb-2">
+            <button className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center" onClick={() => setLightbox(null)}>
+              <X size={18} className="text-white" />
+            </button>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+            <img src={lightbox.photos[lightbox.index]} alt="" className="max-h-full max-w-full rounded-xl" />
+          </div>
+          {lightbox.photos.length > 1 && (
+            <div className="flex justify-center gap-2 pb-6">
+              {lightbox.photos.map((_, idx) => (
+                <button key={idx} onClick={(e) => { e.stopPropagation(); setLightbox({ ...lightbox, index: idx }); }}
+                  className={`w-2 h-2 rounded-full transition ${idx === lightbox.index ? "bg-white" : "bg-white/30"}`} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </Sheet>
   );
 }
 
 /* ================================================================== */
-/*  Ajout d'une chambre                                                */
+/*  Ajout d'une chambre                                                 */
 /* ================================================================== */
 function AddRoomSheet({ onClose, onSave }) {
   const [name, setName] = useState("");
@@ -1056,8 +1150,7 @@ function AddRoomSheet({ onClose, onSave }) {
 }
 
 /* ================================================================== */
-/*  Composants partagés                                                */
-/* ================================================================== */
+/*  Composants partagés                                                 */
 /* ================================================================== */
 function Sheet({ children, onClose }) {
   return (
@@ -1104,4 +1197,12 @@ function Chip({ active, onClick, children, dot }) {
 
 function SectionTitle({ children }) {
   return <p className="text-[11px] uppercase tracking-wider text-stone-400 font-semibold px-1 mb-2 mt-1">{children}</p>;
+}
+
+function ToggleDot({ on, color }) {
+  return (
+    <span className={`w-11 h-6 rounded-full relative transition shrink-0 ${on ? color : "bg-stone-200"}`}>
+      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+    </span>
+  );
 }
