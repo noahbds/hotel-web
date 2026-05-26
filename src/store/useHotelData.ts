@@ -45,6 +45,19 @@ let bootstrappingPromise: Promise<void> | null = null;
 let flushingPromise: Promise<void> | null = null;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let queue: PendingMutation[] = [];
+// The staff_id of the logged-in user — used to personalise notifications
+let currentStaffId: string | null = null;
+
+export function setCurrentStaffId(id: string | null) {
+	currentStaffId = id;
+}
+
+function pushNotification(title: string, body: string) {
+	if (!state.notifyOn) return;
+	if (typeof window === "undefined" || !("Notification" in window)) return;
+	if (Notification.permission !== "granted") return;
+	try { new Notification(title, { body, icon: "/favicon.ico" }); } catch { /* ignore */ }
+}
 
 const listeners = new Set<() => void>();
 
@@ -266,7 +279,17 @@ function setupRealtime(hotelId: string) {
 				mergeState({ rooms: state.rooms.filter((room) => room.id !== (payload.old as { id: string }).id), lastSyncedAt: new Date().toISOString() });
 				return;
 			}
-			replaceRoom(payload.new as RoomRow);
+			const next = payload.new as RoomRow;
+			if (currentStaffId) {
+				const prev = state.rooms.find((r) => r.id === next.id);
+				const STATUS_LABELS: Record<string, string> = { sale: "Sale", propre: "Propre", controlee: "Contrôlée" };
+				if (next.assignee_staff_id === currentStaffId && prev?.assignee_staff_id !== currentStaffId) {
+					pushNotification(`Chambre ${next.name}`, "Cette chambre vous a été attribuée.");
+				} else if (next.assignee_staff_id === currentStaffId && prev?.status !== next.status) {
+					pushNotification(`Chambre ${next.name}`, `Statut : ${STATUS_LABELS[next.status] ?? next.status}`);
+				}
+			}
+			replaceRoom(next);
 		})
 		.on("postgres_changes", { event: "*", schema: "public", table: "issues", filter: `hotel_id=eq.${hotelId}` }, (payload) => {
 			if (payload.eventType === "DELETE") {
@@ -455,7 +478,7 @@ async function deleteRoom(roomId: string) {
 
 async function addStaff(name: string, role: StaffRole) {
 	if (!state.hotelId) throw new Error("Hotel data has not finished loading yet.");
-	const next: StaffRow = { id: uid(), hotel_id: state.hotelId, name: name.trim(), role, active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+	const next: StaffRow = { id: uid(), hotel_id: state.hotelId, name: name.trim(), role, active: true, profile_id: null, avatar_url: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
 	replaceStaff(next);
 	const { error } = await supabase.from("staff").insert(next);
 	if (error) {

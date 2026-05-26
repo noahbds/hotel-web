@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
-  Plus, Wrench, Bell, Check, X, Trash2, Pencil, ChevronRight,
+  Plus, Wrench, Bell, Check, X, Trash2, Pencil,
   Camera, BedDouble, ClipboardCheck, Sparkles, AlertTriangle,
-  Building2, ArrowLeft, Image as ImageIcon, CheckCircle2, Clock,
-  Users, UserPlus, User, Moon, RefreshCw,
+  Building2, Image as ImageIcon, CheckCircle2, Clock,
+  Users, UserPlus, User, Moon, Crown, LogOut, Settings,
 } from "lucide-react";
-import { useHotelData } from "../store/useHotelData";
+import { useHotelData, setCurrentStaffId } from "../store/useHotelData";
+import { supabase } from "../services/supabase/client";
 
 /* ------------------------------------------------------------------ */
 /*  Statuts                                                             */
@@ -101,13 +102,23 @@ function compressImage(file, maxSize = 900, quality = 0.55) {
 /* ================================================================== */
 /*  APP                                                                 */
 /* ================================================================== */
-export default function App() {
+export default function App({ profile, onSignOut, onOpenAdmin }) {
   const hotel = useHotelData();
+
+  // Keep the notification store in sync with the current user's staff_id
+  useEffect(() => {
+    setCurrentStaffId(profile?.staff_id ?? null);
+    return () => setCurrentStaffId(null);
+  }, [profile?.staff_id]);
+
+  const canAssign = profile?.role === "gouvernante" || profile?.is_admin;
+  const canVerify = profile?.role === "gouvernante" || profile?.is_admin;
   const [tab, setTab] = useState("rooms");
   const [openRoomId, setOpenRoomId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState("all");
   const [toast, setToast] = useState(null);
+  const [showProfile, setShowProfile] = useState(false);
   const showToast = useCallback((msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2200);
@@ -322,21 +333,34 @@ export default function App() {
         {/* En-tête */}
         <header className="px-5 pt-6 pb-3 bg-white border-b border-stone-100 sticky top-0 z-20">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[11px] uppercase tracking-widest text-stone-400 font-semibold">Ménage</p>
-              <h1 className="text-[22px] font-bold text-stone-800 leading-tight">{data.hotelName}</h1>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button onClick={() => setShowProfile(true)} className="shrink-0">
+                <UserAvatar src={profile?.avatar_url} name={profile?.name} size="w-9 h-9" />
+              </button>
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-widest text-stone-400 font-semibold">Ménage</p>
+                <h1 className="text-[20px] font-bold text-stone-800 leading-tight truncate">{data.hotelName}</h1>
+              </div>
             </div>
-            <button
-              onClick={() => setTab("activity")}
-              aria-label="Activité et notifications"
-              className="relative w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center active:scale-95 transition">
-              <Bell size={19} className="text-stone-600" />
-              {openIssues.length > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">
-                  {openIssues.length}
-                </span>
+            <div className="flex items-center gap-2">
+              {profile?.is_admin && (
+                <button onClick={onOpenAdmin} aria-label="Administration"
+                  className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center active:scale-95 transition">
+                  <Crown size={17} className="text-amber-600" />
+                </button>
               )}
-            </button>
+              <button
+                onClick={() => setTab("activity")}
+                aria-label="Activité et notifications"
+                className="relative w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center active:scale-95 transition">
+                <Bell size={19} className="text-stone-600" />
+                {openIssues.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">
+                    {openIssues.length}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="flex gap-2 mt-3">
@@ -399,6 +423,15 @@ export default function App() {
             onTogglePriority={togglePriority} onToggleRecouche={toggleRecouche}
             onToggleDnd={toggleDnd} onCleaningHour={setCleaningHour} onNote={updateNote}
             issues={data.issues.filter((i) => i.roomId === openRoom.id && !i.resolved)}
+            canAssign={canAssign} canVerify={canVerify}
+          />
+        )}
+
+        {showProfile && (
+          <ProfileSheet
+            profile={profile}
+            onClose={() => setShowProfile(false)}
+            onSignOut={onSignOut}
           />
         )}
 
@@ -823,7 +856,7 @@ function TeamTab({ data, onAdd, onDelete }) {
 /* ================================================================== */
 /*  Fiche d'une chambre                                                 */
 /* ================================================================== */
-function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onReport, onAssign, onVerifier, onTogglePriority, onToggleRecouche, onToggleDnd, onCleaningHour, onNote, issues }) {
+function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onReport, onAssign, onVerifier, onTogglePriority, onToggleRecouche, onToggleDnd, onCleaningHour, onNote, issues, canAssign = true, canVerify = true }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(room.name);
   const [floor, setFloor] = useState(String(room.floor));
@@ -971,39 +1004,53 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
       {/* Assignée à */}
       <p className="text-xs uppercase tracking-wider text-stone-400 font-semibold mb-2">Assignée à</p>
       <div className="flex flex-wrap gap-1.5 mb-5">
-        {cleaners.length === 0 && (
+        {!canAssign ? (
+          <span className="text-[13px] text-stone-400">
+            {room.assignee
+              ? staffName(data, room.assignee)
+              : <span className="italic">Non assignée</span>}
+          </span>
+        ) : cleaners.length === 0 ? (
           <span className="text-[13px] text-stone-400">Ajoutez du personnel dans l'onglet Équipe.</span>
+        ) : (
+          cleaners.map((p) => {
+            const on = room.assignee === p.id;
+            const RC = ROLES[p.role];
+            return (
+              <button key={p.id} onClick={() => onAssign(room, on ? null : p.id)}
+                className={`flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-full transition active:scale-95 ${
+                  on ? "bg-stone-800 text-white" : `${RC.bg} ${RC.text}`}`}>
+                {on && <Check size={13} />}{p.name}
+              </button>
+            );
+          })
         )}
-        {cleaners.map((p) => {
-          const on = room.assignee === p.id;
-          const RC = ROLES[p.role];
-          return (
-            <button key={p.id} onClick={() => onAssign(room, on ? null : p.id)}
-              className={`flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-full transition active:scale-95 ${
-                on ? "bg-stone-800 text-white" : `${RC.bg} ${RC.text}`}`}>
-              {on && <Check size={13} />}{p.name}
-            </button>
-          );
-        })}
       </div>
 
       {/* Vérifiée par */}
       <p className="text-xs uppercase tracking-wider text-stone-400 font-semibold mb-2">Vérifiée par</p>
       <div className="flex flex-wrap gap-1.5 mb-5">
-        {verifiers.length === 0 && (
+        {!canVerify ? (
+          <span className="text-[13px] text-stone-400">
+            {room.verifier
+              ? staffName(data, room.verifier)
+              : <span className="italic">Non vérifiée</span>}
+          </span>
+        ) : verifiers.length === 0 ? (
           <span className="text-[13px] text-stone-400">Aucune gouvernante / réception dans l'équipe.</span>
+        ) : (
+          verifiers.map((p) => {
+            const on = room.verifier === p.id;
+            const RC = ROLES[p.role];
+            return (
+              <button key={p.id} onClick={() => onVerifier(room, on ? null : p.id)}
+                className={`flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-full transition active:scale-95 ${
+                  on ? "bg-emerald-600 text-white" : `${RC.bg} ${RC.text}`}`}>
+                {on && <ClipboardCheck size={13} />}{p.name}
+              </button>
+            );
+          })
         )}
-        {verifiers.map((p) => {
-          const on = room.verifier === p.id;
-          const RC = ROLES[p.role];
-          return (
-            <button key={p.id} onClick={() => onVerifier(room, on ? null : p.id)}
-              className={`flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-full transition active:scale-95 ${
-                on ? "bg-emerald-600 text-white" : `${RC.bg} ${RC.text}`}`}>
-              {on && <ClipboardCheck size={13} />}{p.name}
-            </button>
-          );
-        })}
       </div>
 
       {/* Problèmes ouverts */}
@@ -1197,6 +1244,119 @@ function Chip({ active, onClick, children, dot }) {
 
 function SectionTitle({ children }) {
   return <p className="text-[11px] uppercase tracking-wider text-stone-400 font-semibold px-1 mb-2 mt-1">{children}</p>;
+}
+
+function UserAvatar({ src, name, size = "w-8 h-8" }) {
+  const initials = (name || "?").trim().split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  if (src) return <img src={src} alt={name} className={`${size} rounded-full object-cover ring-2 ring-stone-100`} />;
+  return (
+    <div className={`${size} rounded-full bg-stone-200 flex items-center justify-center ring-2 ring-stone-100`}>
+      <span className="text-stone-600 font-bold text-[11px]">{initials}</span>
+    </div>
+  );
+}
+
+function ProfileSheet({ profile, onClose, onSignOut }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(profile?.name || "");
+  const [avatar, setAvatar] = useState(profile?.avatar_url || null);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef();
+
+  const ROLE_LABELS = {
+    chambre: "Femme / valet de chambre",
+    gouvernante: "Gouvernante",
+    maintenance: "Technicien maintenance",
+    reception: "Réception",
+  };
+
+  const handleAvatar = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const size = Math.min(img.width, img.height);
+        const canvas = document.createElement("canvas");
+        canvas.width = 256; canvas.height = 256;
+        canvas.getContext("2d").drawImage(img, (img.width - size) / 2, (img.height - size) / 2, size, size, 0, 0, 256, 256);
+        setAvatar(canvas.toDataURL("image/jpeg", 0.7));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(f);
+    e.target.value = "";
+  };
+
+  const save = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      await supabase.rpc("update_my_profile", {
+        p_name: name.trim(),
+        ...(avatar !== profile?.avatar_url ? { p_avatar_url: avatar } : {}),
+      });
+      setEditing(false);
+    } catch { /* ignore */ } finally { setSaving(false); }
+  };
+
+  return (
+    <Sheet onClose={onClose}>
+      <div className="flex flex-col items-center mb-5">
+        <div className="relative mb-3">
+          <UserAvatar src={editing ? avatar : profile?.avatar_url} name={profile?.name} size="w-20 h-20" />
+          {editing && (
+            <>
+              <input ref={fileRef} type="file" accept="image/*" onChange={handleAvatar} className="hidden" />
+              <button onClick={() => fileRef.current?.click()}
+                className="absolute bottom-0 right-0 w-7 h-7 bg-stone-800 rounded-full flex items-center justify-center shadow">
+                <Camera size={13} className="text-white" />
+              </button>
+            </>
+          )}
+        </div>
+        {editing ? (
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={60}
+            className="text-center text-xl font-bold text-stone-800 border-b-2 border-stone-300 outline-none w-48 pb-0.5" />
+        ) : (
+          <h2 className="text-xl font-bold text-stone-800">{profile?.name || profile?.email}</h2>
+        )}
+        <p className="text-sm text-stone-400 mt-0.5">{profile?.email}</p>
+        {profile?.role && (
+          <span className="mt-2 text-xs font-medium bg-stone-100 text-stone-600 px-2.5 py-1 rounded-full">
+            {ROLE_LABELS[profile.role] ?? profile.role}
+          </span>
+        )}
+        {profile?.is_admin && (
+          <span className="mt-1.5 text-xs font-semibold bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full flex items-center gap-1">
+            <Crown size={11} /> Administrateur
+          </span>
+        )}
+      </div>
+
+      {!editing ? (
+        <button onClick={() => setEditing(true)}
+          className="w-full flex items-center justify-center gap-2 bg-stone-100 text-stone-700 font-semibold py-3 rounded-2xl active:scale-[0.98] transition mb-3">
+          <Settings size={16} /> Modifier mon profil
+        </button>
+      ) : (
+        <div className="flex gap-2 mb-3">
+          <button onClick={() => { setEditing(false); setName(profile?.name || ""); setAvatar(profile?.avatar_url || null); }}
+            className="flex-1 bg-stone-100 text-stone-600 font-semibold py-3 rounded-2xl text-sm">Annuler</button>
+          <button onClick={save} disabled={!name.trim() || saving}
+            className="flex-1 bg-stone-800 text-white font-semibold py-3 rounded-2xl text-sm disabled:opacity-40 flex items-center justify-center gap-2">
+            {saving ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Check size={14} /> Enregistrer</>}
+          </button>
+        </div>
+      )}
+
+      <button onClick={onSignOut}
+        className="w-full flex items-center justify-center gap-2 text-rose-600 font-semibold py-3 rounded-2xl active:scale-[0.98] transition">
+        <LogOut size={16} /> Se déconnecter
+      </button>
+    </Sheet>
+  );
 }
 
 function ToggleDot({ on, color }) {
