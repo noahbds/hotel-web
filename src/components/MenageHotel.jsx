@@ -1349,11 +1349,21 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
 function AddRoomSheet({ onClose, onSave }) {
   const [name, setName] = useState("");
   const [floor, setFloor] = useState("1");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    // Focus after slide-up animation completes to avoid browser auto-scroll/layout shift
+    const t = setTimeout(() => {
+      try { inputRef.current?.focus?.({ preventScroll: true }); } catch (e) { inputRef.current?.focus?.(); }
+    }, 260);
+    return () => clearTimeout(t);
+  }, []);
+
   return (
     <Sheet onClose={onClose}>
       <h2 className="text-2xl font-bold text-stone-800 mb-5">Nouvelle chambre</h2>
       <label className="text-xs text-stone-400 font-medium">Nom / numéro</label>
-      <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={50}
+      <input ref={inputRef} value={name} onChange={(e) => setName(e.target.value)} maxLength={50}
         placeholder="Ex. : 305, Suite…"
         onKeyDown={(e) => e.key === "Enter" && name.trim() && onSave({ id: uid(), name: name.trim(), floor: parseInt(floor) || 1, status: "sale" })}
         className="mt-1 mb-4 w-full bg-stone-100 rounded-xl px-3 py-3 outline-none" />
