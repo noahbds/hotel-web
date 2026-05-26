@@ -159,7 +159,7 @@ export default function App() {
     try {
       await hotel.updateRoomStatus(data.hotelId, room.id, ns, room.verifier, null);
       if (openRoomId === room.id) setOpenRoomId(room.id);
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Mise à jour impossible");
     }
   };
@@ -177,11 +177,11 @@ export default function App() {
         assignee: room.assignee || null,
         verifier: room.verifier || null,
         priority: Boolean(room.priority),
-        note: room.note.trim(),
+        note: (room.note ?? "").trim(),
       });
       showToast(exists ? "Chambre modifiée" : "Chambre ajoutée");
       if (openRoomId === room.id) setOpenRoomId(room.id);
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Sauvegarde impossible");
     }
   };
@@ -191,7 +191,7 @@ export default function App() {
       await hotel.deleteRoom(room.id);
       setOpenRoomId(null);
       showToast("Chambre supprimée");
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Suppression impossible");
     }
   };
@@ -200,7 +200,7 @@ export default function App() {
     try {
       await hotel.reportIssue(data.hotelId, room.id, desc, photo, assignee || null, null);
       showToast("Problème signalé");
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Signalement impossible");
     }
   };
@@ -210,7 +210,7 @@ export default function App() {
     try {
       await hotel.addStaff(name, role);
       showToast("Personne ajoutée");
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Ajout impossible");
     }
   };
@@ -219,7 +219,7 @@ export default function App() {
     try {
       await hotel.deleteStaff(id);
       showToast("Personne supprimée");
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Suppression impossible");
     }
   };
@@ -227,7 +227,7 @@ export default function App() {
   const assignRoom = async (room, staffId) => {
     try {
       await hotel.assignRoom(room.id, staffId);
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Attribution impossible");
     }
   };
@@ -235,7 +235,7 @@ export default function App() {
   const assignVerifier = async (room, staffId) => {
     try {
       await hotel.assignVerifier(room.id, staffId);
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Attribution impossible");
     }
   };
@@ -243,7 +243,7 @@ export default function App() {
   const togglePriority = async (room) => {
     try {
       await hotel.togglePriority(room.id);
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Mise à jour impossible");
     }
   };
@@ -251,7 +251,7 @@ export default function App() {
   const updateNote = async (room, note) => {
     try {
       await hotel.updateNote(room.id, note);
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Note impossible à enregistrer");
     }
   };
@@ -259,7 +259,7 @@ export default function App() {
   const renameHotel = async (hotelName) => {
     try {
       await hotel.renameHotel(hotelName);
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Nom impossible à enregistrer");
     }
   };
@@ -268,7 +268,7 @@ export default function App() {
     try {
       await hotel.resetLocalCache();
       showToast("Cache local réinitialisé");
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Réinitialisation impossible");
     }
   };
@@ -276,7 +276,7 @@ export default function App() {
   const assignIssue = async (issue, staffId) => {
     try {
       await hotel.assignIssue(issue.id, staffId);
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Attribution impossible");
     }
   };
@@ -285,7 +285,7 @@ export default function App() {
     try {
       await hotel.resolveIssue(issue.id);
       showToast("Réparé");
-    } catch {
+    } catch (e) { console.error(e);
       showToast("Mise à jour impossible");
     }
   };
