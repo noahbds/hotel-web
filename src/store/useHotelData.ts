@@ -13,8 +13,6 @@ import type {
 	RoomStatus,
 } from "../types/hotel";
 
-const SUPABASE_URL_VALID = Boolean(import.meta.env.VITE_SUPABASE_URL && !String(import.meta.env.VITE_SUPABASE_URL).includes("YOUR_PROJECT_ID"));
-
 type PendingMutation =
 	| { id: string; kind: "updateRoomStatus"; payload: UpdateRoomStatusInput; rollbackRoom: RoomRow }
 	| { id: string; kind: "reportIssue"; payload: ReportIssueInput; tempIssueId: string };
@@ -24,42 +22,6 @@ const QUEUE_CACHE_PREFIX = "hotel-app:web-queue";
 const ACTIVE_HOTEL_KEY = "hotel-app:active-hotel-id";
 const NOTIFY_KEY = "hotel-app:notify-on";
 
-const SEED: HotelDataState = {
-	hotel: {
-		id: "hotel-seed-1",
-		name: "Hôtel Le Beffroi",
-		created_at: new Date().toISOString(),
-		updated_at: new Date().toISOString(),
-	},
-	hotelId: "hotel-seed-1",
-	rooms: [
-		{ id: "r1", hotel_id: "hotel-seed-1", name: "101", floor: 1, status: "controlee", assignee_staff_id: "s1", verifier_staff_id: "s3", priority: false, note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "r2", hotel_id: "hotel-seed-1", name: "102", floor: 1, status: "sale", assignee_staff_id: "s1", verifier_staff_id: null, priority: true, note: "Lit bébé demandé", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "r3", hotel_id: "hotel-seed-1", name: "103", floor: 1, status: "propre", assignee_staff_id: "s2", verifier_staff_id: null, priority: false, note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "r4", hotel_id: "hotel-seed-1", name: "104", floor: 1, status: "sale", assignee_staff_id: null, verifier_staff_id: null, priority: true, note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "r5", hotel_id: "hotel-seed-1", name: "201", floor: 2, status: "sale", assignee_staff_id: "s2", verifier_staff_id: null, priority: false, note: "Ne pas déranger avant 14h", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "r6", hotel_id: "hotel-seed-1", name: "202", floor: 2, status: "controlee", assignee_staff_id: null, verifier_staff_id: "s3", priority: false, note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "r7", hotel_id: "hotel-seed-1", name: "203", floor: 2, status: "propre", assignee_staff_id: null, verifier_staff_id: null, priority: false, note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "r8", hotel_id: "hotel-seed-1", name: "Suite", floor: 3, status: "sale", assignee_staff_id: null, verifier_staff_id: null, priority: true, note: "Arrivée VIP 16h", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-	],
-	issues: [],
-	staff: [
-		{ id: "s1", hotel_id: "hotel-seed-1", name: "Sofia", role: "chambre", active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "s2", hotel_id: "hotel-seed-1", name: "Léa", role: "chambre", active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "s3", hotel_id: "hotel-seed-1", name: "Claire", role: "gouvernante", active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "s4", hotel_id: "hotel-seed-1", name: "Marc", role: "maintenance", active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-		{ id: "s5", hotel_id: "hotel-seed-1", name: "Karim", role: "reception", active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-	],
-	activityLogs: [
-		{ id: "a0", hotel_id: "hotel-seed-1", room_id: null, issue_id: null, actor_staff_id: null, type: "info", status: null, text: "Bienvenue 👋 Touchez la pastille d'une chambre pour changer son statut.", metadata: {}, created_at: new Date().toISOString() },
-	],
-	notifyOn: false,
-	isHydrated: true,
-	isLoading: false,
-	isSyncing: false,
-	lastError: null,
-	lastSyncedAt: new Date().toISOString(),
-};
 
 const EMPTY_STATE: HotelDataState = {
 	hotel: null,
@@ -90,8 +52,8 @@ function emit() {
 	listeners.forEach((listener) => listener());
 }
 
-function uid(prefix = "id") {
-	return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+function uid() {
+	return crypto.randomUUID();
 }
 
 function canUseWebStorage() {
@@ -222,18 +184,24 @@ function loadCachedState(hotelId: string) {
 	return { ...EMPTY_STATE, hotelId, isHydrated: false, isLoading: true, isSyncing: true, notifyOn: readStorage<boolean>(NOTIFY_KEY) ?? false } satisfies HotelDataState;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function fetchActiveHotel(requestedHotelId?: string | null) {
 	if (requestedHotelId) {
+		if (!UUID_RE.test(requestedHotelId)) throw new Error(`Invalid hotel ID: ${requestedHotelId}`);
 		const { data, error } = await supabase.from("hotels").select("*").eq("id", requestedHotelId).maybeSingle();
 		if (error) throw error;
 		return (data as HotelRow | null) ?? null;
 	}
 
 	const cachedHotelId = canUseWebStorage() ? window.localStorage.getItem(ACTIVE_HOTEL_KEY) : null;
-	if (cachedHotelId) {
+	if (cachedHotelId && UUID_RE.test(cachedHotelId)) {
 		const { data, error } = await supabase.from("hotels").select("*").eq("id", cachedHotelId).maybeSingle();
 		if (error) throw error;
 		if (data) return data as HotelRow;
+	} else if (cachedHotelId) {
+		// Stale non-UUID value from old seed data — remove it
+		window.localStorage.removeItem(ACTIVE_HOTEL_KEY);
 	}
 
 	const { data, error } = await supabase.from("hotels").select("*").order("created_at", { ascending: true }).limit(1);
@@ -313,18 +281,10 @@ async function bootstrapHotelData(requestedHotelId?: string | null) {
 	if (bootstrappingPromise && activeHotelId === requestedHotelId) return bootstrappingPromise;
 
 	bootstrappingPromise = (async () => {
-		const useSeedFallback = !SUPABASE_URL_VALID;
-		if (useSeedFallback) {
-			state = { ...SEED };
-			activeHotelId = SEED.hotelId;
-			emit();
-			return;
-		}
-
 		try {
 			const hotel = await fetchActiveHotel(requestedHotelId ?? activeHotelId);
 			if (!hotel) {
-				mergeState({ ...EMPTY_STATE, isHydrated: true, isLoading: false, isSyncing: false, lastError: "No hotel row found in Supabase." });
+				mergeState({ ...EMPTY_STATE, isHydrated: true, isLoading: false, isSyncing: false, lastError: "Aucun hôtel trouvé dans la base de données. Vérifiez que le schéma SQL a été exécuté." });
 				return;
 			}
 
@@ -340,9 +300,7 @@ async function bootstrapHotelData(requestedHotelId?: string | null) {
 			setupRealtime(hotel.id);
 			await flushPendingMutations(hotel.id);
 		} catch (error) {
-			state = { ...SEED, lastError: error instanceof Error ? error.message : "Unable to load hotel data." };
-			activeHotelId = SEED.hotelId;
-			emit();
+			mergeState({ ...EMPTY_STATE, isHydrated: true, isLoading: false, isSyncing: false, lastError: error instanceof Error ? error.message : "Impossible de charger les données de l'hôtel." });
 		}
 	})().finally(() => {
 		bootstrappingPromise = null;
@@ -470,7 +428,7 @@ async function deleteRoom(roomId: string) {
 
 async function addStaff(name: string, role: StaffRole) {
 	if (!state.hotelId) throw new Error("Hotel data has not finished loading yet.");
-	const next: StaffRow = { id: uid("staff"), hotel_id: state.hotelId, name: name.trim(), role, active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+	const next: StaffRow = { id: uid(), hotel_id: state.hotelId, name: name.trim(), role, active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
 	replaceStaff(next);
 	const { error } = await supabase.from("staff").insert(next);
 	if (error && !isNetworkFailure(error)) throw error;
@@ -519,7 +477,7 @@ async function updateRoomStatus(hotelId: string, roomId: string, newStatus: Upda
 	if (!previous) throw new Error("Room not found in local state.");
 	const optimistic = { ...previous, status: newStatus, verifier_staff_id: newStatus === "controlee" ? verifierId : previous.verifier_staff_id, updated_at: new Date().toISOString() } as RoomRow;
 	replaceRoom(optimistic);
-	const mutation: PendingMutation = { id: uid("mutation"), kind: "updateRoomStatus", payload: { hotelId, roomId, newStatus, verifierId, actorId }, rollbackRoom: previous };
+	const mutation: PendingMutation = { id: uid(), kind: "updateRoomStatus", payload: { hotelId, roomId, newStatus, verifierId, actorId }, rollbackRoom: previous };
 	queue = [...queue.filter((item) => item.id !== mutation.id), mutation];
 	schedulePersist();
 	try {
@@ -541,10 +499,10 @@ async function updateRoomStatus(hotelId: string, roomId: string, newStatus: Upda
 
 async function reportIssue(hotelId: string, roomId: string, description: string, photoUrl: string | null, assigneeId: string | null, actorId: string | null) {
 	await bootstrapHotelData(hotelId);
-	const tempIssueId = uid("issue");
+	const tempIssueId = uid();
 	const tempIssue: IssueRow = { id: tempIssueId, hotel_id: hotelId, room_id: roomId, description, photo_url: photoUrl, assignee_staff_id: assigneeId, resolved: false, resolved_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
 	replaceIssue(tempIssue);
-	const mutation: PendingMutation = { id: uid("mutation"), kind: "reportIssue", payload: { hotelId, roomId, description, photoUrl, assigneeId, actorId }, tempIssueId };
+	const mutation: PendingMutation = { id: uid(), kind: "reportIssue", payload: { hotelId, roomId, description, photoUrl, assigneeId, actorId }, tempIssueId };
 	queue = [...queue.filter((item) => item.id !== mutation.id), mutation];
 	schedulePersist();
 	try {

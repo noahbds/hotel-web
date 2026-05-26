@@ -1,7 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = "https://tfdrlseqgenmhokirtff.supabase.co ";
-const SUPABASE_ANON_KEY = "sb_publishable_fqmxngC0W1i8GeXTt0iE2g_dUraSAVM";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error("Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY environment variables.");
+}
 
 const memoryStorage = (() => {
   const store = new Map<string, string>();
@@ -35,7 +39,6 @@ const webStorage = {
     } catch {
       // fall back to in-memory storage below
     }
-
     memoryStorage.setItem(key, value);
   },
   removeItem(key: string) {
@@ -47,7 +50,6 @@ const webStorage = {
     } catch {
       // fall back to in-memory storage below
     }
-
     memoryStorage.removeItem(key);
   },
 };

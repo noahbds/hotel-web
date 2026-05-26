@@ -5,7 +5,7 @@ import {
   Building2, ArrowLeft, Image as ImageIcon, CheckCircle2, Clock,
   Users, UserPlus, User,
 } from "lucide-react";
-import { useHotelData } from "./hotel-web/src/store/useHotelData";
+import { useHotelData } from "../store/useHotelData";
 
 /* ------------------------------------------------------------------ */
 /*  Configuration des statuts (cycle métier : Sale → Propre → Contrôlée) */
@@ -51,7 +51,7 @@ const VERIFY_ROLES = ["gouvernante", "reception"];
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
-const uid = () => Math.random().toString(36).slice(2, 9);
+const uid = () => crypto.randomUUID();
 
 const staffById = (data, id) => data.staff?.find((s) => s.id === id) || null;
 const staffName = (data, id) => staffById(data, id)?.name || null;
