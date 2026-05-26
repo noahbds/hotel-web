@@ -734,7 +734,18 @@ function MaintenanceTab({ data, onResolve, onAssign }) {
             </button>
           </div>
           <div className="flex-1 flex items-center justify-center p-4">
-            <img src={lightbox.photos[lightbox.index]} alt="" className="max-h-full max-w-full rounded-xl" />
+            <button
+              type="button"
+              onClick={() => {
+                if (lightbox.photos.length > 1) {
+                  setLightbox({ ...lightbox, index: (lightbox.index + 1) % lightbox.photos.length });
+                }
+              }}
+              className="max-h-full max-w-full rounded-xl"
+              aria-label={lightbox.photos.length > 1 ? "Photo suivante" : "Photo"}
+            >
+              <img src={lightbox.photos[lightbox.index]} alt="" className="max-h-full max-w-full rounded-xl" />
+            </button>
           </div>
           {lightbox.photos.length > 1 && (
             <div className="flex justify-center gap-2 pb-6">
@@ -1305,7 +1316,18 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
             </button>
           </div>
           <div className="flex-1 flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
-            <img src={lightbox.photos[lightbox.index]} alt="" className="max-h-full max-w-full rounded-xl" />
+            <button
+              type="button"
+              onClick={() => {
+                if (lightbox.photos.length > 1) {
+                  setLightbox({ ...lightbox, index: (lightbox.index + 1) % lightbox.photos.length });
+                }
+              }}
+              className="max-h-full max-w-full rounded-xl"
+              aria-label={lightbox.photos.length > 1 ? "Photo suivante" : "Photo"}
+            >
+              <img src={lightbox.photos[lightbox.index]} alt="" className="max-h-full max-w-full rounded-xl" />
+            </button>
           </div>
           {lightbox.photos.length > 1 && (
             <div className="flex justify-center gap-2 pb-6">
