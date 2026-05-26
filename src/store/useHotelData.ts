@@ -361,9 +361,10 @@ async function updateRoomRow(roomId: string, patch: Partial<RoomRow>) {
 	const optimistic = { ...previous, ...patch, updated_at: new Date().toISOString() } as RoomRow;
 	replaceRoom(optimistic);
 	const { error } = await supabase.from("rooms").update(patch).eq("id", roomId).eq("hotel_id", state.hotelId);
-	if (error && !isNetworkFailure(error)) {
+	if (error) {
 		replaceRoom(previous);
-		throw error;
+		if (!isNetworkFailure(error)) throw error;
+		mergeState({ lastError: "Synchronisation impossible, veuillez réessayer." });
 	}
 }
 
@@ -374,9 +375,10 @@ async function updateIssueRow(issueId: string, patch: Partial<IssueRow>) {
 	const optimistic = { ...previous, ...patch, updated_at: new Date().toISOString() } as IssueRow;
 	replaceIssue(optimistic);
 	const { error } = await supabase.from("issues").update(patch).eq("id", issueId).eq("hotel_id", state.hotelId);
-	if (error && !isNetworkFailure(error)) {
+	if (error) {
 		replaceIssue(previous);
-		throw error;
+		if (!isNetworkFailure(error)) throw error;
+		mergeState({ lastError: "Synchronisation impossible, veuillez réessayer." });
 	}
 }
 
@@ -404,12 +406,14 @@ async function createRoom(room: { id: string; name: string; floor: number; statu
 async function saveRoom(room: { id: string; name: string; floor: number; status: RoomStatus; assignee?: string | null; verifier?: string | null; priority?: boolean; note?: string }) {
 	const existing = state.rooms.find((item) => item.id === room.id);
 	if (!existing) return createRoom({ id: room.id, name: room.name, floor: room.floor, status: room.status, note: room.note, priority: room.priority });
+	if (!state.hotelId) throw new Error("Hotel data has not finished loading yet.");
 	const patch: Partial<RoomRow> = { name: room.name, floor: room.floor, status: room.status, assignee_staff_id: room.assignee ?? null, verifier_staff_id: room.verifier ?? null, priority: room.priority ?? false, note: room.note ?? "", updated_at: new Date().toISOString() };
 	replaceRoom({ ...existing, ...patch } as RoomRow);
 	const { error } = await supabase.from("rooms").update(patch).eq("id", room.id).eq("hotel_id", state.hotelId);
-	if (error && !isNetworkFailure(error)) {
+	if (error) {
 		replaceRoom(existing);
-		throw error;
+		if (!isNetworkFailure(error)) throw error;
+		mergeState({ lastError: "Synchronisation impossible, veuillez réessayer." });
 	}
 }
 
@@ -431,18 +435,31 @@ async function addStaff(name: string, role: StaffRole) {
 	const next: StaffRow = { id: uid(), hotel_id: state.hotelId, name: name.trim(), role, active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
 	replaceStaff(next);
 	const { error } = await supabase.from("staff").insert(next);
-	if (error && !isNetworkFailure(error)) throw error;
+	if (error) {
+		state = { ...state, staff: sortStaff(state.staff.filter((person) => person.id !== next.id)) };
+		emit();
+		if (!isNetworkFailure(error)) throw error;
+		mergeState({ lastError: "Synchronisation impossible, veuillez réessayer." });
+	}
 }
 
 async function deleteStaff(staffId: string) {
 	if (!state.hotelId) throw new Error("Hotel data has not finished loading yet.");
+	const previousRooms = state.rooms;
+	const previousIssues = state.issues;
+	const previousStaff = state.staff;
 	const nextRooms = state.rooms.map((room) => ({ ...room, assignee_staff_id: room.assignee_staff_id === staffId ? null : room.assignee_staff_id, verifier_staff_id: room.verifier_staff_id === staffId ? null : room.verifier_staff_id }));
 	const nextIssues = state.issues.map((issue) => ({ ...issue, assignee_staff_id: issue.assignee_staff_id === staffId ? null : issue.assignee_staff_id }));
 	const nextStaff = state.staff.filter((person) => person.id !== staffId);
 	state = { ...state, rooms: sortRooms(nextRooms), issues: sortIssues(nextIssues), staff: sortStaff(nextStaff), lastSyncedAt: new Date().toISOString() };
 	emit();
 	const { error } = await supabase.from("staff").delete().eq("id", staffId).eq("hotel_id", state.hotelId);
-	if (error && !isNetworkFailure(error)) throw error;
+	if (error) {
+		state = { ...state, rooms: previousRooms, issues: previousIssues, staff: previousStaff };
+		emit();
+		if (!isNetworkFailure(error)) throw error;
+		mergeState({ lastError: "Synchronisation impossible, veuillez réessayer." });
+	}
 }
 
 async function assignRoom(roomId: string, staffId: string | null) {

@@ -53,11 +53,20 @@ const VERIFY_ROLES = ["gouvernante", "reception"];
 /* ------------------------------------------------------------------ */
 const uid = () => crypto.randomUUID();
 
+function sanitizeErrorMessage(msg) {
+  if (!msg) return null;
+  // Don't expose raw DB/network error internals to the user
+  if (/violates|constraint|relation|syntax|42[A-Z0-9]{3}|ERROR:|SQLSTATE|socket|fetch|ECONN|ENOTFOUND/i.test(msg)) {
+    return "Une erreur s'est produite. Veuillez réessayer.";
+  }
+  return msg;
+}
+
 const staffById = (data, id) => data.staff?.find((s) => s.id === id) || null;
 const staffName = (data, id) => staffById(data, id)?.name || null;
 
 function relTime(ts) {
-  const s = Math.floor((Date.now() - ts) / 1000);
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
   if (s < 60) return "à l'instant";
   const m = Math.floor(s / 60);
   if (m < 60) return `il y a ${m} min`;
@@ -69,18 +78,25 @@ function relTime(ts) {
 
 // Compresse une photo en miniature pour tenir dans le stockage
 function compressImage(file, maxSize = 900, quality = 0.55) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Lecture du fichier impossible"));
     reader.onload = (e) => {
       const img = new Image();
+      img.onerror = () => reject(new Error("Image invalide ou corrompue"));
       img.onload = () => {
-        let { width, height } = img;
-        if (width > height && width > maxSize) { height *= maxSize / width; width = maxSize; }
-        else if (height > maxSize) { width *= maxSize / height; height = maxSize; }
-        const canvas = document.createElement("canvas");
-        canvas.width = width; canvas.height = height;
-        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        try {
+          let { width, height } = img;
+          if (width > height && width > maxSize) { height *= maxSize / width; width = maxSize; }
+          else if (height > maxSize) { width *= maxSize / height; height = maxSize; }
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(width);
+          canvas.height = Math.round(height);
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        } catch (err) {
+          reject(err);
+        }
       };
       img.src = e.target.result;
     };
@@ -104,7 +120,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (hotel.lastError) showToast(hotel.lastError);
+    if (hotel.lastError) showToast(sanitizeErrorMessage(hotel.lastError) ?? hotel.lastError);
   }, [hotel.lastError, showToast]);
 
   const data = useMemo(() => {
@@ -326,6 +342,7 @@ export default function App() {
             </div>
             <button
               onClick={() => setTab("activity")}
+              aria-label="Activité et notifications"
               className="relative w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center active:scale-95 transition">
               <Bell size={19} className="text-stone-600" />
               {openIssues.length > 0 && (
@@ -376,6 +393,7 @@ export default function App() {
         {tab === "rooms" && (
           <button
             onClick={() => setAdding(true)}
+            aria-label="Ajouter une chambre"
             className="absolute bottom-24 right-5 w-14 h-14 rounded-full bg-stone-800 text-white flex items-center justify-center shadow-lg active:scale-90 transition z-20">
             <Plus size={26} />
           </button>
@@ -411,9 +429,13 @@ export default function App() {
 
         {/* ---------- Toast ---------- */}
         {toast && (
-          <div className="absolute bottom-28 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-4 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
+          <button
+            onClick={() => setToast(null)}
+            className="absolute bottom-28 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-4 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap active:scale-95 transition"
+            aria-live="polite"
+            aria-label={`${toast} — toucher pour fermer`}>
             {toast}
-          </div>
+          </button>
         )}
       </div>
     </div>
@@ -440,7 +462,7 @@ function RoomsTab({ data, filter, setFilter, onCycle, onOpen }) {
     <div>
       {/* Recherche */}
       <div className="px-5 pt-3">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une chambre…"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une chambre…" maxLength={100}
           className="w-full bg-white border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-stone-400" />
       </div>
       {/* Filtres */}
@@ -656,7 +678,7 @@ function ActivityTab({ data, onToggleNotify, onRename, onReset }) {
       <div className="bg-white rounded-2xl p-4 mb-4">
         <p className="font-semibold text-stone-800 text-[15px] mb-2">Réglages</p>
         <label className="text-xs text-stone-400 font-medium">Nom de l'hôtel</label>
-        <input value={hotelName} onChange={(e) => setHotelName(e.target.value)} onBlur={() => onRename(hotelName)}
+        <input value={hotelName} onChange={(e) => setHotelName(e.target.value)} onBlur={() => onRename(hotelName)} maxLength={100}
           className="mt-1 mb-3 w-full bg-stone-100 rounded-xl px-3 py-2.5 outline-none" />
         {!confirmReset ? (
           <button onClick={() => setConfirmReset(true)}
@@ -712,7 +734,7 @@ function TeamTab({ data, onAdd, onDelete }) {
       {adding && (
         <div className="bg-white rounded-2xl p-4 mb-4">
           <label className="text-xs text-stone-400 font-medium">Nom</label>
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={50}
             placeholder="Ex. : Sofia" onKeyDown={(e) => e.key === "Enter" && submit()}
             className="mt-1 mb-3 w-full bg-stone-100 rounded-xl px-3 py-2.5 outline-none" />
           <label className="text-xs text-stone-400 font-medium">Rôle</label>
@@ -761,7 +783,7 @@ function TeamTab({ data, onAdd, onDelete }) {
                         className="text-[12px] font-semibold text-white bg-rose-500 px-2.5 py-1 rounded-full">Supprimer</button>
                     </div>
                   ) : (
-                    <button onClick={() => setConfirmDel(m.id)}
+                    <button onClick={() => setConfirmDel(m.id)} aria-label={`Supprimer ${m.name}`}
                       className="w-8 h-8 rounded-full hover:bg-stone-100 flex items-center justify-center">
                       <Trash2 size={15} className="text-stone-400" />
                     </button>
@@ -801,7 +823,12 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
 
   const handlePhoto = async (e) => {
     const f = e.target.files?.[0];
-    if (f) setPhoto(await compressImage(f));
+    if (!f) return;
+    try {
+      setPhoto(await compressImage(f));
+    } catch {
+      // Photo stays null; user can try again
+    }
   };
 
   const submitEdit = () => {
@@ -823,12 +850,13 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
       {/* En-tête fiche */}
       <div className="flex items-center justify-between mb-4">
         {editing ? (
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={50}
             className="text-2xl font-bold text-stone-800 border-b-2 border-stone-300 outline-none w-32" />
         ) : (
           <h2 className="text-2xl font-bold text-stone-800">Chambre {room.name}</h2>
         )}
         <button onClick={() => (editing ? submitEdit() : setEditing(true))}
+          aria-label={editing ? "Enregistrer les modifications" : "Modifier la chambre"}
           className="text-sm font-semibold text-sky-600 px-2 py-1">
           {editing ? "OK" : <Pencil size={18} />}
         </button>
@@ -843,7 +871,7 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
           </div>
           <div>
             <label className="text-xs text-stone-400 font-medium">Note / demande client</label>
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={500}
               placeholder="Ex. : lit bébé, allergie, arrivée tardive…"
               className="mt-1 w-full bg-stone-100 rounded-xl px-3 py-2.5 outline-none text-sm resize-none" />
           </div>
@@ -944,7 +972,7 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
         </button>
       ) : (
         <div className="bg-stone-100 rounded-2xl p-3 mb-3">
-          <textarea value={desc} onChange={(e) => setDesc(e.target.value)}
+          <textarea value={desc} onChange={(e) => setDesc(e.target.value)} maxLength={1000}
             placeholder="Ex. : robinet qui fuit, ampoule grillée…" rows={2}
             className="w-full bg-white rounded-xl px-3 py-2.5 outline-none text-sm resize-none mb-2" />
           {/* Assigner à un technicien (optionnel) */}
@@ -1011,11 +1039,12 @@ function AddRoomSheet({ onClose, onSave }) {
     <Sheet onClose={onClose}>
       <h2 className="text-2xl font-bold text-stone-800 mb-5">Nouvelle chambre</h2>
       <label className="text-xs text-stone-400 font-medium">Nom / numéro</label>
-      <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+      <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={50}
         placeholder="Ex. : 305, Suite…"
+        onKeyDown={(e) => e.key === "Enter" && name.trim() && onSave({ id: uid(), name: name.trim(), floor: parseInt(floor) || 1, status: "sale" })}
         className="mt-1 mb-4 w-full bg-stone-100 rounded-xl px-3 py-3 outline-none" />
       <label className="text-xs text-stone-400 font-medium">Étage</label>
-      <input type="number" value={floor} onChange={(e) => setFloor(e.target.value)}
+      <input type="number" value={floor} onChange={(e) => setFloor(e.target.value)} min={0} max={99}
         className="mt-1 mb-6 w-full bg-stone-100 rounded-xl px-3 py-3 outline-none" />
       <button onClick={() => name.trim() && onSave({ id: uid(), name: name.trim(), floor: parseInt(floor) || 1, status: "sale" })}
         disabled={!name.trim()}
@@ -1034,15 +1063,14 @@ function Sheet({ children, onClose }) {
   return (
     <div className="absolute inset-0 z-40 flex items-end">
       <div onClick={onClose} className="absolute inset-0 bg-black/30" />
-      <div className="relative w-full bg-white rounded-t-3xl p-5 pb-8 max-h-[88%] overflow-y-auto animate-[slideUp_.25s_ease]"
-        style={{ animationName: "slideUp" }}>
+      <div className="relative w-full bg-white rounded-t-3xl p-5 pb-8 max-h-[88%] overflow-y-auto"
+        style={{ animation: "slideUp .25s ease" }}>
         <div className="w-10 h-1 bg-stone-300 rounded-full mx-auto mb-4" />
-        <button onClick={onClose} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center">
+        <button onClick={onClose} aria-label="Fermer" className="absolute top-4 right-4 w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center">
           <X size={16} className="text-stone-500" />
         </button>
         {children}
       </div>
-      <style>{`@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
     </div>
   );
 }
