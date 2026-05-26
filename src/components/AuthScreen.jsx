@@ -65,7 +65,11 @@ export default function AuthScreen() {
     setError(null);
     setLoading(true);
 
-    const { data, error: signUpErr } = await supabase.auth.signUp({ email: email.trim(), password });
+    const { data, error: signUpErr } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { emailRedirectTo: window.location.origin },
+    });
     if (signUpErr) { setError(translateError(signUpErr.message)); setLoading(false); return; }
 
     if (data.user) {
