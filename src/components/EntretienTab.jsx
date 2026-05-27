@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ChevronDown, ChevronUp, CheckCircle2, Clock, AlertCircle, MapPin } from "lucide-react";
+import { ChevronDown, ChevronUp, CheckCircle2, Clock, AlertCircle, MapPin, Activity } from "lucide-react";
 
 export const ENTRETIEN_TASKS = {
   literie: {
@@ -43,6 +43,44 @@ export const ENTRETIEN_TASKS = {
     label: "Shampooing moquettes",
     emoji: "🧹",
     tasks: [{ key: "shampooing", label: "Shampooing moquette" }],
+  },
+};
+
+export const ZONE_TASKS = {
+  sols: {
+    label: "Sols",
+    emoji: "🧹",
+    tasks: [
+      { key: "z_balayage", label: "Balayage / aspiration" },
+      { key: "z_lavage_sol", label: "Lavage sol" },
+      { key: "z_shampooing_moquette", label: "Shampooing moquette" },
+    ],
+  },
+  surfaces: {
+    label: "Surfaces",
+    emoji: "✨",
+    tasks: [
+      { key: "z_poussieres", label: "Poussières (meubles, cadres)" },
+      { key: "z_plinthes", label: "Plinthes" },
+      { key: "z_portes_poignees", label: "Portes et poignées" },
+      { key: "z_interrupteurs", label: "Interrupteurs / plaques" },
+    ],
+  },
+  vitrerie: {
+    label: "Vitrerie",
+    emoji: "🪟",
+    tasks: [
+      { key: "z_vitres", label: "Vitres et fenêtres" },
+      { key: "z_miroirs", label: "Miroirs / parois vitrées" },
+    ],
+  },
+  luminaires: {
+    label: "Luminaires",
+    emoji: "💡",
+    tasks: [
+      { key: "z_lampes", label: "Lampes et appliques" },
+      { key: "z_plafond", label: "Plafond et coins" },
+    ],
   },
 };
 
@@ -93,10 +131,118 @@ function StatusDot({ dateStr, size = "sm" }) {
   );
 }
 
-function CategoryChips({ entretienLogs, roomId, zone }) {
+function roomStats(room, entretienLogs) {
+  const allTasks = Object.values(ENTRETIEN_TASKS).flatMap((c) => c.tasks);
+  const total = allTasks.length;
+  let green = 0, amber = 0, red = 0;
+  let lastActivityDate = null;
+
+  for (const task of allTasks) {
+    const log = entretienLogs.find((l) => l.room_id === room.id && l.task_type === task.key);
+    if (log) {
+      if (!lastActivityDate || new Date(log.completed_at) > new Date(lastActivityDate)) {
+        lastActivityDate = log.completed_at;
+      }
+      const d = daysSince(log.completed_at);
+      if (d <= 7) green++;
+      else if (d <= 30) amber++;
+      else red++;
+    } else {
+      red++;
+    }
+  }
+
+  return { total, green, amber, red, lastActivityDate };
+}
+
+function formatDateTime(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${day}/${month}/${year} ${h}:${m}`;
+}
+
+function RoomSummaryCard({ room, entretienLogs, onClick }) {
+  const stats = useMemo(() => roomStats(room, entretienLogs), [room, entretienLogs]);
+  const { total, green, amber, red, lastActivityDate } = stats;
+
+  const healthLabel = red === 0 && amber === 0
+    ? { text: "À jour", cls: "bg-emerald-100 text-emerald-700" }
+    : red > total * 0.4
+    ? { text: "Urgent", cls: "bg-rose-100 text-rose-700" }
+    : { text: "Attention", cls: "bg-amber-100 text-amber-700" };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left bg-white rounded-2xl border border-stone-200 px-4 py-3 active:bg-stone-50 space-y-2.5"
+    >
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-stone-900 text-sm">{room.name}</span>
+        <div className="flex items-center gap-2">
+          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${healthLabel.cls}`}>
+            {healthLabel.text}
+          </span>
+          <ChevronDown size={14} className="text-stone-400" />
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="flex rounded-full overflow-hidden h-2 gap-px bg-stone-100">
+        {green > 0 && (
+          <div className="bg-emerald-400 rounded-full" style={{ flex: green }} />
+        )}
+        {amber > 0 && (
+          <div className="bg-amber-400 rounded-full" style={{ flex: amber }} />
+        )}
+        {red > 0 && (
+          <div className="bg-rose-400 rounded-full" style={{ flex: red }} />
+        )}
+      </div>
+
+      {/* Score row */}
+      <div className="flex items-center gap-3 text-[11px]">
+        <span className="flex items-center gap-1 text-emerald-600 font-medium">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />{green} récents
+        </span>
+        {amber > 0 && (
+          <span className="flex items-center gap-1 text-amber-600 font-medium">
+            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />{amber} anciens
+          </span>
+        )}
+        {red > 0 && (
+          <span className="flex items-center gap-1 text-rose-500 font-medium">
+            <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" />{red} en retard
+          </span>
+        )}
+        <span className="ml-auto text-stone-400">{green + amber}/{total}</span>
+      </div>
+
+      {/* Category chips */}
+      <CategoryChips entretienLogs={entretienLogs} roomId={room.id} zone={null} />
+
+      {/* Last activity */}
+      <div className="flex items-center gap-1.5 text-[11px] text-stone-400">
+        <Activity size={11} className="flex-shrink-0" />
+        {lastActivityDate
+          ? <span>Dernière activité : <span className="text-stone-600 font-medium">{formatDateTime(lastActivityDate)}</span></span>
+          : <span className="italic">Aucune activité enregistrée</span>
+        }
+      </div>
+    </button>
+  );
+}
+
+function CategoryChips({ entretienLogs, roomId, zone, taskDefs = ENTRETIEN_TASKS }) {
   return (
     <div className="flex flex-wrap gap-1">
-      {Object.entries(ENTRETIEN_TASKS).map(([catKey, cat]) => {
+      {Object.entries(taskDefs).map(([catKey, cat]) => {
         const allKeys = cat.tasks.map((t) => t.key);
         const logs = entretienLogs.filter(
           (l) =>
@@ -123,6 +269,95 @@ function CategoryChips({ entretienLogs, roomId, zone }) {
         );
       })}
     </div>
+  );
+}
+
+function zoneStats(zoneKey, entretienLogs) {
+  const allTasks = Object.values(ZONE_TASKS).flatMap((c) => c.tasks);
+  const total = allTasks.length;
+  let green = 0, amber = 0, red = 0;
+  let lastActivityDate = null;
+
+  for (const task of allTasks) {
+    const log = entretienLogs.find((l) => l.zone === zoneKey && l.task_type === task.key);
+    if (log) {
+      if (!lastActivityDate || new Date(log.completed_at) > new Date(lastActivityDate)) {
+        lastActivityDate = log.completed_at;
+      }
+      const d = daysSince(log.completed_at);
+      if (d <= 7) green++;
+      else if (d <= 30) amber++;
+      else red++;
+    } else {
+      red++;
+    }
+  }
+
+  return { total, green, amber, red, lastActivityDate };
+}
+
+function ZoneSummaryCard({ zone, entretienLogs, onClick }) {
+  const stats = useMemo(() => zoneStats(zone.key, entretienLogs), [zone, entretienLogs]);
+  const { total, green, amber, red, lastActivityDate } = stats;
+
+  const healthLabel = red === 0 && amber === 0
+    ? { text: "À jour", cls: "bg-emerald-100 text-emerald-700" }
+    : red > total * 0.4
+    ? { text: "Urgent", cls: "bg-rose-100 text-rose-700" }
+    : { text: "Attention", cls: "bg-amber-100 text-amber-700" };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left bg-white rounded-2xl border border-stone-200 px-4 py-3 active:bg-stone-50 space-y-2.5"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MapPin size={14} className="text-stone-400 flex-shrink-0" />
+          <span className="font-semibold text-stone-900 text-sm">{zone.label}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${healthLabel.cls}`}>
+            {healthLabel.text}
+          </span>
+          <ChevronDown size={14} className="text-stone-400" />
+        </div>
+      </div>
+
+      <div className="flex rounded-full overflow-hidden h-2 gap-px bg-stone-100">
+        {green > 0 && <div className="bg-emerald-400 rounded-full" style={{ flex: green }} />}
+        {amber > 0 && <div className="bg-amber-400 rounded-full" style={{ flex: amber }} />}
+        {red > 0 && <div className="bg-rose-400 rounded-full" style={{ flex: red }} />}
+      </div>
+
+      <div className="flex items-center gap-3 text-[11px]">
+        <span className="flex items-center gap-1 text-emerald-600 font-medium">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />{green} récents
+        </span>
+        {amber > 0 && (
+          <span className="flex items-center gap-1 text-amber-600 font-medium">
+            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />{amber} anciens
+          </span>
+        )}
+        {red > 0 && (
+          <span className="flex items-center gap-1 text-rose-500 font-medium">
+            <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" />{red} en retard
+          </span>
+        )}
+        <span className="ml-auto text-stone-400">{green + amber}/{total}</span>
+      </div>
+
+      <CategoryChips entretienLogs={entretienLogs} roomId={null} zone={zone.key} taskDefs={ZONE_TASKS} />
+
+      <div className="flex items-center gap-1.5 text-[11px] text-stone-400">
+        <Activity size={11} className="flex-shrink-0" />
+        {lastActivityDate
+          ? <span>Dernière activité : <span className="text-stone-600 font-medium">{formatDateTime(lastActivityDate)}</span></span>
+          : <span className="italic">Aucune activité enregistrée</span>
+        }
+      </div>
+    </button>
   );
 }
 
@@ -268,7 +503,7 @@ function RoomDetailSheet({ room, entretienLogs, staff, onLog, onClose, currentSt
 }
 
 function ZoneDetailSheet({ zone, entretienLogs, staff, onLog, onClose, currentStaffId }) {
-  const [openCats, setOpenCats] = useState({ literie: false, sdb: true, chambre: true, shampooing: true });
+  const [openCats, setOpenCats] = useState({ sols: true, surfaces: false, vitrerie: false, luminaires: false });
 
   function staffName(id) {
     return staff.find((s) => s.id === id)?.name ?? null;
@@ -285,8 +520,6 @@ function ZoneDetailSheet({ zone, entretienLogs, staff, onLog, onClose, currentSt
   function toggleCat(catKey) {
     setOpenCats((prev) => ({ ...prev, [catKey]: !prev[catKey] }));
   }
-
-  const relevantCats = ["sdb", "chambre", "shampooing"];
 
   return (
     <div
@@ -316,36 +549,33 @@ function ZoneDetailSheet({ zone, entretienLogs, staff, onLog, onClose, currentSt
         </div>
 
         <div className="p-5 space-y-3">
-          {relevantCats.map((catKey) => {
-            const cat = ENTRETIEN_TASKS[catKey];
-            return (
-              <div key={catKey} className="rounded-2xl border border-stone-200 overflow-hidden bg-white">
-                <button
-                  type="button"
-                  onClick={() => toggleCat(catKey)}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left"
-                >
-                  <span className="text-base">{cat.emoji}</span>
-                  <span className="flex-1 font-semibold text-stone-800 text-sm">{cat.label}</span>
-                  {openCats[catKey] ? <ChevronUp size={16} className="text-stone-400" /> : <ChevronDown size={16} className="text-stone-400" />}
-                </button>
-                {openCats[catKey] && (
-                  <div className="px-3 pb-3 space-y-2 border-t border-stone-100">
-                    {cat.tasks.map((task) => (
-                      <TaskRow
-                        key={task.key}
-                        taskKey={task.key}
-                        taskLabel={task.label}
-                        logs={logsForTask(task.key)}
-                        onLog={handleLog}
-                        staffName={staffName}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {Object.entries(ZONE_TASKS).map(([catKey, cat]) => (
+            <div key={catKey} className="rounded-2xl border border-stone-200 overflow-hidden bg-white">
+              <button
+                type="button"
+                onClick={() => toggleCat(catKey)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left"
+              >
+                <span className="text-base">{cat.emoji}</span>
+                <span className="flex-1 font-semibold text-stone-800 text-sm">{cat.label}</span>
+                {openCats[catKey] ? <ChevronUp size={16} className="text-stone-400" /> : <ChevronDown size={16} className="text-stone-400" />}
+              </button>
+              {openCats[catKey] && (
+                <div className="px-3 pb-3 space-y-2 border-t border-stone-100">
+                  {cat.tasks.map((task) => (
+                    <TaskRow
+                      key={task.key}
+                      taskKey={task.key}
+                      taskLabel={task.label}
+                      logs={logsForTask(task.key)}
+                      onLog={handleLog}
+                      staffName={staffName}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -439,18 +669,12 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
                 </p>
                 <div className="space-y-2">
                   {floorRooms.map((room) => (
-                    <button
+                    <RoomSummaryCard
                       key={room.id}
-                      type="button"
+                      room={room}
+                      entretienLogs={entretienLogs}
                       onClick={() => setSelectedRoomId(room.id)}
-                      className="w-full text-left bg-white rounded-2xl border border-stone-200 px-4 py-3 active:bg-stone-50"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-semibold text-stone-900 text-sm">{room.name}</span>
-                        <ChevronDown size={14} className="text-stone-400" />
-                      </div>
-                      <CategoryChips entretienLogs={entretienLogs} roomId={room.id} zone={null} />
-                    </button>
+                    />
                   ))}
                 </div>
               </div>
@@ -459,21 +683,12 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
         ) : (
           <div className="space-y-2">
             {ZONES.map((zone) => (
-              <button
+              <ZoneSummaryCard
                 key={zone.key}
-                type="button"
+                zone={zone}
+                entretienLogs={entretienLogs}
                 onClick={() => setSelectedZoneKey(zone.key)}
-                className="w-full text-left bg-white rounded-2xl border border-stone-200 px-4 py-3 active:bg-stone-50"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <MapPin size={14} className="text-stone-400" />
-                    <span className="font-semibold text-stone-900 text-sm">{zone.label}</span>
-                  </div>
-                  <ChevronDown size={14} className="text-stone-400" />
-                </div>
-                <CategoryChips entretienLogs={entretienLogs} roomId={null} zone={zone.key} />
-              </button>
+              />
             ))}
           </div>
         )}
