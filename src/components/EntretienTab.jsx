@@ -6,43 +6,43 @@ export const ENTRETIEN_TASKS = {
     label: "Literie",
     emoji: "🛏",
     tasks: [
-      { key: "couettes", label: "Couettes" },
-      { key: "draps", label: "Draps / housses" },
-      { key: "oreillers", label: "Oreillers" },
-      { key: "plaids", label: "Plaids" },
-      { key: "coussins", label: "Coussins" },
+      { key: "couettes", label: "Couettes", frequencyDays: 30 },
+      { key: "draps", label: "Draps / housses", frequencyDays: 7 },
+      { key: "oreillers", label: "Oreillers", frequencyDays: 30 },
+      { key: "plaids", label: "Plaids", frequencyDays: 30 },
+      { key: "coussins", label: "Coussins", frequencyDays: 30 },
     ],
   },
   sdb: {
     label: "Salle de bain",
     emoji: "🚿",
     tasks: [
-      { key: "siphons_douches", label: "Siphons / évacuations douches" },
-      { key: "frotter_carrelages", label: "Frotter carrelages SDB" },
-      { key: "vmc_sdb", label: "VMC SDB" },
-      { key: "seche_cheveux", label: "Poussières sèche-cheveux" },
-      { key: "portes_sdb", label: "Lessiver portes SDB" },
+      { key: "siphons_douches", label: "Siphons / évacuations douches", frequencyDays: 14 },
+      { key: "frotter_carrelages", label: "Frotter carrelages SDB", frequencyDays: 7 },
+      { key: "vmc_sdb", label: "VMC SDB", frequencyDays: 30 },
+      { key: "seche_cheveux", label: "Poussières sèche-cheveux", frequencyDays: 30 },
+      { key: "portes_sdb", label: "Lessiver portes SDB", frequencyDays: 30 },
     ],
   },
   chambre: {
     label: "Chambre",
     emoji: "🏠",
     tasks: [
-      { key: "aspirateur", label: "Aspirateur" },
-      { key: "poussieres", label: "Poussières" },
-      { key: "lampes", label: "Lampes" },
-      { key: "plinthes", label: "Plinthes CH et SDB" },
-      { key: "vitres", label: "Vitres et toiles fenêtres" },
-      { key: "stores", label: "Stores chambres" },
-      { key: "placards", label: "Intérieur des placards" },
-      { key: "teles", label: "Télés et télécommandes" },
-      { key: "frigos", label: "Frigos intérieur" },
+      { key: "aspirateur", label: "Aspirateur", frequencyDays: 7 },
+      { key: "poussieres", label: "Poussières", frequencyDays: 7 },
+      { key: "lampes", label: "Lampes", frequencyDays: 30 },
+      { key: "plinthes", label: "Plinthes CH et SDB", frequencyDays: 30 },
+      { key: "vitres", label: "Vitres et toiles fenêtres", frequencyDays: 30 },
+      { key: "stores", label: "Stores chambres", frequencyDays: 30 },
+      { key: "placards", label: "Intérieur des placards", frequencyDays: 30 },
+      { key: "teles", label: "Télés et télécommandes", frequencyDays: 14 },
+      { key: "frigos", label: "Frigos intérieur", frequencyDays: 30 },
     ],
   },
   shampooing: {
     label: "Shampooing moquettes",
     emoji: "🧹",
-    tasks: [{ key: "shampooing", label: "Shampooing moquette" }],
+    tasks: [{ key: "shampooing", label: "Shampooing moquette", frequencyDays: 90 }],
   },
 };
 
@@ -51,35 +51,35 @@ export const ZONE_TASKS = {
     label: "Sols",
     emoji: "🧹",
     tasks: [
-      { key: "z_balayage", label: "Balayage / aspiration" },
-      { key: "z_lavage_sol", label: "Lavage sol" },
-      { key: "z_shampooing_moquette", label: "Shampooing moquette" },
+      { key: "z_balayage", label: "Balayage / aspiration", frequencyDays: 2 },
+      { key: "z_lavage_sol", label: "Lavage sol", frequencyDays: 7 },
+      { key: "z_shampooing_moquette", label: "Shampooing moquette", frequencyDays: 30 },
     ],
   },
   surfaces: {
     label: "Surfaces",
     emoji: "✨",
     tasks: [
-      { key: "z_poussieres", label: "Poussières (meubles, cadres)" },
-      { key: "z_plinthes", label: "Plinthes" },
-      { key: "z_portes_poignees", label: "Portes et poignées" },
-      { key: "z_interrupteurs", label: "Interrupteurs / plaques" },
+      { key: "z_poussieres", label: "Poussières (meubles, cadres)", frequencyDays: 7 },
+      { key: "z_plinthes", label: "Plinthes", frequencyDays: 30 },
+      { key: "z_portes_poignees", label: "Portes et poignées", frequencyDays: 7 },
+      { key: "z_interrupteurs", label: "Interrupteurs / plaques", frequencyDays: 30 },
     ],
   },
   vitrerie: {
     label: "Vitrerie",
     emoji: "🪟",
     tasks: [
-      { key: "z_vitres", label: "Vitres et fenêtres" },
-      { key: "z_miroirs", label: "Miroirs / parois vitrées" },
+      { key: "z_vitres", label: "Vitres et fenêtres", frequencyDays: 30 },
+      { key: "z_miroirs", label: "Miroirs / parois vitrées", frequencyDays: 7 },
     ],
   },
   luminaires: {
     label: "Luminaires",
     emoji: "💡",
     tasks: [
-      { key: "z_lampes", label: "Lampes et appliques" },
-      { key: "z_plafond", label: "Plafond et coins" },
+      { key: "z_lampes", label: "Lampes et appliques", frequencyDays: 30 },
+      { key: "z_plafond", label: "Plafond et coins", frequencyDays: 30 },
     ],
   },
 };
@@ -108,15 +108,15 @@ function relativeDate(dateStr) {
   return `Il y a ${Math.floor(days / 30)} mois`;
 }
 
-function statusColor(dateStr) {
+function statusColor(dateStr, frequencyDays = 30) {
   const days = daysSince(dateStr);
-  if (days === null || days > 30) return "red";
-  if (days > 7) return "orange";
+  if (days === null || days > frequencyDays) return "red";
+  if (days > frequencyDays / 2) return "orange";
   return "green";
 }
 
-function StatusDot({ dateStr, size = "sm" }) {
-  const color = statusColor(dateStr);
+function StatusDot({ dateStr, frequencyDays = 30, size = "sm" }) {
+  const color = statusColor(dateStr, frequencyDays);
   const sizeClass = size === "sm" ? "w-2 h-2" : "w-3 h-3";
   return (
     <span
@@ -144,8 +144,8 @@ function roomStats(room, entretienLogs) {
         lastActivityDate = log.completed_at;
       }
       const d = daysSince(log.completed_at);
-      if (d <= 7) green++;
-      else if (d <= 30) amber++;
+      if (d <= task.frequencyDays / 2) green++;
+      else if (d <= task.frequencyDays) amber++;
       else red++;
     } else {
       red++;
@@ -243,18 +243,22 @@ function CategoryChips({ entretienLogs, roomId, zone, taskDefs = ENTRETIEN_TASKS
   return (
     <div className="flex flex-wrap gap-1">
       {Object.entries(taskDefs).map(([catKey, cat]) => {
-        const allKeys = cat.tasks.map((t) => t.key);
-        const logs = entretienLogs.filter(
-          (l) =>
-            allKeys.includes(l.task_type) &&
-            (roomId ? l.room_id === roomId : l.zone === zone)
-        );
-        const latest = logs[0]?.completed_at ?? null;
-        const color = statusColor(latest);
+        let worstColor = "green";
+        for (const task of cat.tasks) {
+          const log = entretienLogs.find(
+            (l) =>
+              l.task_type === task.key &&
+              (roomId ? l.room_id === roomId : l.zone === zone)
+          );
+          const c = statusColor(log?.completed_at ?? null, task.frequencyDays);
+          if (c === "red") { worstColor = "red"; break; }
+          if (c === "orange") worstColor = "orange";
+        }
+        const color = worstColor;
         return (
           <span
             key={catKey}
-            title={`${cat.label} — ${relativeDate(latest)}`}
+            title={cat.label}
             className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
               color === "green"
                 ? "bg-emerald-100 text-emerald-700"
@@ -285,8 +289,8 @@ function zoneStats(zoneKey, entretienLogs) {
         lastActivityDate = log.completed_at;
       }
       const d = daysSince(log.completed_at);
-      if (d <= 7) green++;
-      else if (d <= 30) amber++;
+      if (d <= task.frequencyDays / 2) green++;
+      else if (d <= task.frequencyDays) amber++;
       else red++;
     } else {
       red++;
@@ -361,11 +365,11 @@ function ZoneSummaryCard({ zone, entretienLogs, onClick }) {
   );
 }
 
-function TaskRow({ taskKey, taskLabel, logs, onLog, staffName }) {
+function TaskRow({ taskKey, taskLabel, frequencyDays = 30, logs, onLog, staffName }) {
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const latest = logs[0]?.completed_at ?? null;
-  const color = statusColor(latest);
+  const color = statusColor(latest, frequencyDays);
   const recent = logs.slice(0, 5);
 
   async function handleLog() {
@@ -380,7 +384,7 @@ function TaskRow({ taskKey, taskLabel, logs, onLog, staffName }) {
   return (
     <div className="border border-stone-200 rounded-xl overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-3 bg-white">
-        <StatusDot dateStr={latest} size="md" />
+        <StatusDot dateStr={latest} frequencyDays={frequencyDays} size="md" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-stone-800 truncate">{taskLabel}</p>
           <p className={`text-xs ${color === "green" ? "text-emerald-600" : color === "orange" ? "text-amber-600" : "text-rose-500"}`}>
@@ -487,6 +491,7 @@ function RoomDetailSheet({ room, entretienLogs, staff, onLog, onClose, currentSt
                       key={task.key}
                       taskKey={task.key}
                       taskLabel={task.label}
+                      frequencyDays={task.frequencyDays}
                       logs={logsForTask(task.key)}
                       onLog={handleLog}
                       staffName={staffName}
@@ -567,6 +572,7 @@ function ZoneDetailSheet({ zone, entretienLogs, staff, onLog, onClose, currentSt
                       key={task.key}
                       taskKey={task.key}
                       taskLabel={task.label}
+                      frequencyDays={task.frequencyDays}
                       logs={logsForTask(task.key)}
                       onLog={handleLog}
                       staffName={staffName}
@@ -600,11 +606,11 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
 
   const overdueCount = useMemo(() => {
     let count = 0;
-    const allKeys = Object.values(ENTRETIEN_TASKS).flatMap((c) => c.tasks.map((t) => t.key));
+    const allTasks = Object.values(ENTRETIEN_TASKS).flatMap((c) => c.tasks);
     for (const room of rooms) {
-      for (const key of allKeys) {
-        const latest = entretienLogs.find((l) => l.room_id === room.id && l.task_type === key);
-        if (!latest || daysSince(latest.completed_at) > 30) count++;
+      for (const task of allTasks) {
+        const latest = entretienLogs.find((l) => l.room_id === room.id && l.task_type === task.key);
+        if (!latest || daysSince(latest.completed_at) > task.frequencyDays) count++;
       }
     }
     return count;
@@ -650,9 +656,9 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
 
         {/* Legend */}
         <div className="flex items-center gap-3 text-xs text-stone-500">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> &lt; 7 j</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> 7–30 j</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400 inline-block" /> &gt; 30 j ou jamais</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> À l'heure</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> Bientôt dû</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400 inline-block" /> En retard</span>
         </div>
       </div>
 
