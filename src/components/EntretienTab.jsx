@@ -783,10 +783,11 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
             <button
               type="button"
               onClick={() => setShowFreqConfig(true)}
-              className="ml-auto w-8 h-8 flex items-center justify-center rounded-full bg-stone-100 text-stone-500 active:bg-stone-200 transition"
+              className="ml-auto h-8 inline-flex items-center gap-1.5 rounded-full border border-stone-900 bg-white px-3 text-stone-900 shadow-sm active:bg-stone-100 transition"
               title="Configurer les fréquences"
             >
               <Settings size={15} />
+              <span className="text-xs font-semibold whitespace-nowrap">Fréquences</span>
             </button>
           )}
         </div>
