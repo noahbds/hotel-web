@@ -390,9 +390,9 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
   const toVerifyCount = data.rooms.filter((r) => r.status === "propre").length;
 
   return (
-    <div className="min-h-screen bg-stone-100 flex justify-center"
+    <div className="h-screen bg-stone-100 flex justify-center overflow-hidden"
       style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif" }}>
-      <div className="w-full max-w-md bg-stone-50 min-h-screen relative shadow-xl flex flex-col">
+      <div className="w-full max-w-md bg-stone-50 h-screen relative shadow-xl flex flex-col">
 
         {/* En-tête */}
         <header className="px-5 pt-6 pb-3 bg-white border-b border-stone-100 sticky top-0 z-20">

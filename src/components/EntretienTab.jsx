@@ -609,26 +609,41 @@ function ZoneDetailSheet({ zone, entretienLogs, staff, onLog, onClose, currentSt
 }
 
 function FrequencyConfigSheet({ onClose, freqOverrides, onSave }) {
-  const [draft, setDraft] = useState(() => ({ ...freqOverrides }));
+  const allTasks = useMemo(
+    () => [
+      ...Object.values(ENTRETIEN_TASKS).flatMap((c) => c.tasks),
+      ...Object.values(ZONE_TASKS).flatMap((c) => c.tasks),
+    ],
+    []
+  );
 
-  function setVal(taskKey, defaultDays, raw) {
-    const n = parseInt(raw, 10);
-    setDraft((prev) => {
-      const next = { ...prev };
-      if (!isNaN(n) && n > 0 && n !== defaultDays) next[taskKey] = n;
-      else delete next[taskKey];
-      return next;
-    });
+  const [inputVals, setInputVals] = useState(() => {
+    const vals = {};
+    for (const task of allTasks) {
+      vals[task.key] = String(freqOverrides[task.key] ?? task.frequencyDays);
+    }
+    return vals;
+  });
+
+  function handleChange(taskKey, raw) {
+    setInputVals((prev) => ({ ...prev, [taskKey]: raw }));
   }
 
   function handleSave() {
-    saveFreqOverrides(draft);
-    onSave(draft);
+    const overrides = {};
+    for (const task of allTasks) {
+      const n = parseInt(inputVals[task.key], 10);
+      if (!isNaN(n) && n > 0 && n !== task.frequencyDays) overrides[task.key] = n;
+    }
+    saveFreqOverrides(overrides);
+    onSave(overrides);
     onClose();
   }
 
   function handleReset() {
-    setDraft({});
+    const vals = {};
+    for (const task of allTasks) vals[task.key] = String(task.frequencyDays);
+    setInputVals(vals);
   }
 
   const allTaskDefs = [
@@ -686,8 +701,9 @@ function FrequencyConfigSheet({ onClose, freqOverrides, onSave }) {
                     </div>
                     <div className="divide-y divide-stone-100">
                       {cat.tasks.map((task) => {
-                        const currentVal = draft[task.key] ?? task.frequencyDays;
-                        const isOverridden = draft[task.key] !== undefined;
+                        const rawVal = inputVals[task.key] ?? String(task.frequencyDays);
+                        const parsed = parseInt(rawVal, 10);
+                        const isOverridden = !isNaN(parsed) && parsed > 0 && parsed !== task.frequencyDays;
                         return (
                           <div key={task.key} className="flex items-center gap-3 px-4 py-2.5">
                             <span className={`flex-1 text-sm ${isOverridden ? "text-stone-900 font-medium" : "text-stone-600"}`}>
@@ -698,8 +714,8 @@ function FrequencyConfigSheet({ onClose, freqOverrides, onSave }) {
                                 type="number"
                                 min="1"
                                 max="365"
-                                value={currentVal}
-                                onChange={(e) => setVal(task.key, task.frequencyDays, e.target.value)}
+                                value={rawVal}
+                                onChange={(e) => handleChange(task.key, e.target.value)}
                                 className={`w-16 text-center text-sm rounded-lg px-2 py-1 outline-none border ${
                                   isOverridden
                                     ? "border-amber-300 bg-amber-50 text-amber-900 font-semibold"
