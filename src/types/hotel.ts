@@ -28,7 +28,28 @@ export interface ProfileRow {
 	staff_id: string | null; active: boolean; created_at: string; updated_at: string;
 }
 
-export interface HotelDataState { hotel: HotelRow | null; hotelId: string | null; rooms: RoomRow[]; issues: IssueRow[]; staff: StaffRow[]; activityLogs: ActivityLogRow[]; notifyOn: boolean; isHydrated: boolean; isLoading: boolean; isSyncing: boolean; lastError: string | null; lastSyncedAt: string | null; }
+export interface EntretienLogRow {
+	id: string;
+	hotel_id: string;
+	room_id: string | null;
+	task_type: string;
+	zone: string | null;
+	completed_at: string;
+	completed_by_staff_id: string | null;
+	notes: string;
+	created_at: string;
+}
+
+export interface LogEntretienInput {
+	hotelId: string;
+	roomId: string | null;
+	taskType: string;
+	zone: string | null;
+	completedByStaffId: string | null;
+	notes?: string;
+}
+
+export interface HotelDataState { hotel: HotelRow | null; hotelId: string | null; rooms: RoomRow[]; issues: IssueRow[]; staff: StaffRow[]; activityLogs: ActivityLogRow[]; entretienLogs: EntretienLogRow[]; notifyOn: boolean; isHydrated: boolean; isLoading: boolean; isSyncing: boolean; lastError: string | null; lastSyncedAt: string | null; }
 
 export interface UpdateRoomStatusInput { hotelId: string; roomId: string; newStatus: RoomStatus; verifierId: string | null; actorId: string | null; }
 export interface ReportIssueInput { hotelId: string; roomId: string; description: string; photoUrls: string[]; assigneeId: string | null; actorId: string | null; }

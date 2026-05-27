@@ -4,10 +4,11 @@ import {
   Camera, BedDouble, ClipboardCheck, Sparkles, AlertTriangle,
   Building2, Image as ImageIcon, CheckCircle2, Clock,
   Users, UserPlus, User, Moon, Crown, LogOut, Settings, Lock,
-  WifiOff, Star,
+  WifiOff, Star, ClipboardList,
 } from "lucide-react";
 import { useHotelData, setCurrentStaffId } from "../store/useHotelData";
 import { supabase } from "../services/supabase/client";
+import EntretienTab, { ENTRETIEN_TASKS } from "./EntretienTab";
 
 /* ------------------------------------------------------------------ */
 /*  Statuts                                                             */
@@ -201,10 +202,25 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
         text: activity.text,
         ts: new Date(activity.created_at).getTime(),
       })),
+      entretienLogs: hotel.entretienLogs,
       notifyOn: hotel.notifyOn,
       hotelId: hotel.hotelId,
     };
-  }, [hotel.activityLogs, hotel.hotel, hotel.hotelId, hotel.issues, hotel.notifyOn, hotel.rooms, hotel.staff]);
+  }, [hotel.activityLogs, hotel.entretienLogs, hotel.hotel, hotel.hotelId, hotel.issues, hotel.notifyOn, hotel.rooms, hotel.staff]);
+
+  const entretienOverdueCount = useMemo(() => {
+    const allKeys = Object.values(ENTRETIEN_TASKS).flatMap((c) => c.tasks.map((t) => t.key));
+    let count = 0;
+    for (const room of data.rooms) {
+      for (const key of allKeys) {
+        const latest = (data.entretienLogs ?? []).find((l) => l.room_id === room.id && l.task_type === key);
+        if (!latest) { count++; continue; }
+        const days = Math.floor((Date.now() - new Date(latest.completed_at).getTime()) / 86400000);
+        if (days > 30) count++;
+      }
+    }
+    return count;
+  }, [data.rooms, data.entretienLogs]);
 
   const openRoom = useMemo(
     () => data.rooms.find((room) => room.id === openRoomId) || null,
@@ -335,6 +351,12 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
     } catch (e) { console.error(e); showToast("Impossible de supprimer l'historique"); }
   };
 
+  const logEntretien = async (input) => {
+    try {
+      await hotel.logEntretien({ ...input, hotelId: data.hotelId });
+    } catch (e) { console.error(e); showToast("Enregistrement impossible"); }
+  };
+
   const assignIssue = async (issue, staffId) => {
     try { await hotel.assignIssue(issue.id, staffId); }
     catch (e) { console.error(e); showToast("Attribution impossible"); }
@@ -461,6 +483,15 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
           {tab === "activity" && (
             <ActivityTab data={data} onToggleNotify={toggleNotify} onRename={renameHotel} onReset={resetData} onClearActivity={clearActivity} profile={profile} />
           )}
+          {tab === "entretien" && (
+            <EntretienTab
+              rooms={data.rooms}
+              entretienLogs={data.entretienLogs ?? []}
+              staff={data.staff}
+              onLog={logEntretien}
+              currentStaffId={profile?.staff_id ?? null}
+            />
+          )}
         </main>
 
         {tab === "rooms" && (
@@ -476,6 +507,7 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
           <TabBtn active={tab === "rooms"} onClick={() => setTab("rooms")} Icon={BedDouble} label="Chambres" />
           <TabBtn active={tab === "maintenance"} onClick={() => setTab("maintenance")} Icon={Wrench} label="Maintenance" badge={openIssues.length} />
+          <TabBtn active={tab === "entretien"} onClick={() => setTab("entretien")} Icon={ClipboardList} label="Entretien" badge={entretienOverdueCount > 0 ? entretienOverdueCount : 0} />
           <TabBtn active={tab === "team"} onClick={() => setTab("team")} Icon={Users} label="Équipe" />
           <TabBtn active={tab === "activity"} onClick={() => setTab("activity")} Icon={Bell} label="Activité" />
         </nav>
@@ -489,6 +521,8 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
             onToggleDnd={toggleDnd} onCleaningHour={setCleaningHour} onNote={updateNote}
             issues={data.issues.filter((i) => i.roomId === openRoom.id && !i.resolved)}
             canAssign={canAssign} canVerify={canVerify} profile={profile}
+            entretienLogs={(data.entretienLogs ?? []).filter((l) => l.room_id === openRoom.id)}
+            onLogEntretien={logEntretien}
           />
         )}
 
@@ -1036,7 +1070,7 @@ function TeamTab({ data, onAdd, onDelete }) {
 /* ================================================================== */
 /*  Fiche d'une chambre                                                 */
 /* ================================================================== */
-function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onReport, onAssign, onVerifier, onTogglePriority, onToggleRecouche, onToggleDnd, onCleaningHour, onNote, issues, canAssign = true, canVerify = true, profile }) {
+function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onReport, onAssign, onVerifier, onTogglePriority, onToggleRecouche, onToggleDnd, onCleaningHour, onNote, issues, canAssign = true, canVerify = true, profile, entretienLogs = [], onLogEntretien }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(room.name);
   const [floor, setFloor] = useState(String(room.floor));
@@ -1056,8 +1090,10 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
   const handlePhotos = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
+    const canAdd = 4 - photos.length;
+    if (canAdd <= 0) { e.target.value = ""; return; }
     try {
-      const compressed = await Promise.all(files.map((f) => compressImage(f)));
+      const compressed = await Promise.all(files.slice(0, canAdd).map((f) => compressImage(f)));
       setPhotos((prev) => [...prev, ...compressed].slice(0, 4));
     } catch {
       // stays empty; user can retry
@@ -1312,6 +1348,14 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
         </div>
       )}
 
+      {/* Entretien rapide */}
+      <EntretienRapide
+        roomId={room.id}
+        entretienLogs={entretienLogs}
+        onLog={onLogEntretien}
+        currentStaffId={profile?.staff_id ?? null}
+      />
+
       {/* Dernière mise à jour */}
       <p className="text-center text-[11px] text-stone-400 mb-2 flex items-center justify-center gap-1">
         <Clock size={11} /> Dernière mise à jour {relTime(room.updatedAt)}
@@ -1365,6 +1409,84 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
         </div>
       )}
     </Sheet>
+  );
+}
+
+/* ================================================================== */
+/*  Entretien rapide (section dans la fiche chambre)                   */
+/* ================================================================== */
+const QUICK_TASKS = [
+  { key: "couettes", label: "Couettes", emoji: "🛏" },
+  { key: "draps", label: "Draps", emoji: "🛏" },
+  { key: "siphons_douches", label: "Siphons", emoji: "🚿" },
+  { key: "aspirateur", label: "Aspirateur", emoji: "🏠" },
+];
+
+function EntretienRapide({ roomId, entretienLogs, onLog, currentStaffId }) {
+  const [loading, setLoading] = useState(null);
+
+  function lastDone(taskKey) {
+    return entretienLogs.find((l) => l.task_type === taskKey)?.completed_at ?? null;
+  }
+
+  function relativeDate(dateStr) {
+    if (!dateStr) return "Jamais";
+    const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+    if (days === 0) return "Auj.";
+    if (days === 1) return "Hier";
+    if (days < 7) return `${days} j`;
+    if (days < 30) return `${Math.floor(days / 7)} sem`;
+    return `${Math.floor(days / 30)} mois`;
+  }
+
+  function dotColor(dateStr) {
+    if (!dateStr) return "bg-rose-400";
+    const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+    if (days <= 7) return "bg-emerald-400";
+    if (days <= 30) return "bg-amber-400";
+    return "bg-rose-400";
+  }
+
+  async function handleLog(taskKey) {
+    setLoading(taskKey);
+    try {
+      await onLog?.({ roomId, taskType: taskKey, zone: null, completedByStaffId: currentStaffId });
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  return (
+    <div className="mb-4">
+      <p className="text-xs uppercase tracking-wider text-stone-400 font-semibold mb-2">Entretien rapide</p>
+      <div className="grid grid-cols-2 gap-2">
+        {QUICK_TASKS.map(({ key, label, emoji }) => {
+          const date = lastDone(key);
+          const isLoading = loading === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => handleLog(key)}
+              disabled={isLoading}
+              className="flex items-center gap-2 bg-white border border-stone-200 rounded-2xl px-3 py-2.5 active:scale-[0.98] transition text-left disabled:opacity-60"
+            >
+              <span className="text-base shrink-0">{emoji}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-semibold text-stone-800 truncate">{label}</p>
+                <div className="flex items-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor(date)}`} />
+                  <p className="text-[10px] text-stone-400">{relativeDate(date)}</p>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold text-emerald-600 shrink-0">
+                {isLoading ? "…" : "✓"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

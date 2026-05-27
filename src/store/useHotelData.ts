@@ -2,9 +2,11 @@ import { useEffect, useSyncExternalStore } from "react";
 import { supabase } from "../services/supabase/client";
 import type {
 	ActivityLogRow,
+	EntretienLogRow,
 	HotelDataState,
 	HotelRow,
 	IssueRow,
+	LogEntretienInput,
 	ReportIssueInput,
 	RoomRow,
 	StaffRow,
@@ -30,6 +32,7 @@ const EMPTY_STATE: HotelDataState = {
 	issues: [],
 	staff: [],
 	activityLogs: [],
+	entretienLogs: [],
 	notifyOn: false,
 	isHydrated: false,
 	isLoading: false,
@@ -151,6 +154,10 @@ function sortActivityLogs(activityLogs: ActivityLogRow[]) {
 	return [...activityLogs].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
 }
 
+function sortEntretienLogs(logs: EntretienLogRow[]) {
+	return [...logs].sort((left, right) => new Date(right.completed_at).getTime() - new Date(left.completed_at).getTime());
+}
+
 function replaceRoom(nextRoom: RoomRow) {
 	const room = normalizeRoom(nextRoom);
 	state = { ...state, rooms: sortRooms(state.rooms.some((r) => r.id === room.id) ? state.rooms.map((r) => (r.id === room.id ? room : r)) : [room, ...state.rooms]), lastSyncedAt: new Date().toISOString() };
@@ -181,6 +188,12 @@ function replaceStaff(nextStaff: StaffRow) {
 
 function replaceActivityLog(nextActivity: ActivityLogRow) {
 	state = { ...state, activityLogs: sortActivityLogs(state.activityLogs.some((activity) => activity.id === nextActivity.id) ? state.activityLogs.map((activity) => (activity.id === nextActivity.id ? nextActivity : activity)) : [nextActivity, ...state.activityLogs]), lastSyncedAt: new Date().toISOString() };
+	emit();
+	schedulePersist();
+}
+
+function replaceEntretienLog(nextLog: EntretienLogRow) {
+	state = { ...state, entretienLogs: sortEntretienLogs(state.entretienLogs.some((l) => l.id === nextLog.id) ? state.entretienLogs.map((l) => (l.id === nextLog.id ? nextLog : l)) : [nextLog, ...state.entretienLogs]), lastSyncedAt: new Date().toISOString() };
 	emit();
 	schedulePersist();
 }
@@ -222,7 +235,7 @@ function loadCachedState(hotelId: string) {
 	if (cachedQueue) queue = cachedQueue;
 
 	if (cachedState) {
-		return { ...EMPTY_STATE, ...cachedState, hotelId, isHydrated: true, isLoading: true, isSyncing: true, rooms: sortRooms((cachedState.rooms ?? []).map(normalizeRoom)), issues: sortIssues((cachedState.issues ?? []).map(normalizeIssue)), staff: sortStaff(cachedState.staff ?? []), activityLogs: sortActivityLogs(cachedState.activityLogs ?? []) } satisfies HotelDataState;
+		return { ...EMPTY_STATE, ...cachedState, hotelId, isHydrated: true, isLoading: true, isSyncing: true, rooms: sortRooms((cachedState.rooms ?? []).map(normalizeRoom)), issues: sortIssues((cachedState.issues ?? []).map(normalizeIssue)), staff: sortStaff(cachedState.staff ?? []), activityLogs: sortActivityLogs(cachedState.activityLogs ?? []), entretienLogs: sortEntretienLogs(cachedState.entretienLogs ?? []) } satisfies HotelDataState;
 	}
 
 	return { ...EMPTY_STATE, hotelId, isHydrated: false, isLoading: true, isSyncing: true, notifyOn: readStorage<boolean>(NOTIFY_KEY) ?? false } satisfies HotelDataState;
@@ -253,17 +266,18 @@ async function fetchActiveHotel(requestedHotelId?: string | null) {
 }
 
 async function fetchInitialData(hotelId: string) {
-	const [roomsResult, issuesResult, staffResult, activityResult] = await Promise.all([
+	const [roomsResult, issuesResult, staffResult, activityResult, entretienResult] = await Promise.all([
 		supabase.from("rooms").select("*").eq("hotel_id", hotelId).order("floor", { ascending: true }).order("name", { ascending: true }),
 		supabase.from("issues").select("*").eq("hotel_id", hotelId).order("created_at", { ascending: false }),
 		supabase.from("staff").select("*").eq("hotel_id", hotelId).eq("hidden", false).order("role", { ascending: true }).order("name", { ascending: true }),
 		supabase.from("activity_logs").select("*").eq("hotel_id", hotelId).order("created_at", { ascending: false }).limit(100),
+		supabase.from("entretien_logs").select("*").eq("hotel_id", hotelId).order("completed_at", { ascending: false }).limit(500),
 	]);
 
-	const error = roomsResult.error || issuesResult.error || staffResult.error || activityResult.error;
+	const error = roomsResult.error || issuesResult.error || staffResult.error || activityResult.error || entretienResult.error;
 	if (error) throw error;
 
-	mergeState({ hotelId, rooms: sortRooms(((roomsResult.data as RoomRow[] | null) ?? []).map(normalizeRoom)), issues: sortIssues(((issuesResult.data as IssueRow[] | null) ?? []).map(normalizeIssue)), staff: sortStaff((staffResult.data as StaffRow[] | null) ?? []), activityLogs: sortActivityLogs((activityResult.data as ActivityLogRow[] | null) ?? []), isHydrated: true, isLoading: false, isSyncing: true, lastError: null, lastSyncedAt: new Date().toISOString() });
+	mergeState({ hotelId, rooms: sortRooms(((roomsResult.data as RoomRow[] | null) ?? []).map(normalizeRoom)), issues: sortIssues(((issuesResult.data as IssueRow[] | null) ?? []).map(normalizeIssue)), staff: sortStaff((staffResult.data as StaffRow[] | null) ?? []), activityLogs: sortActivityLogs((activityResult.data as ActivityLogRow[] | null) ?? []), entretienLogs: sortEntretienLogs((entretienResult.data as EntretienLogRow[] | null) ?? []), isHydrated: true, isLoading: false, isSyncing: true, lastError: null, lastSyncedAt: new Date().toISOString() });
 }
 
 function cleanupRealtime() {
@@ -345,6 +359,13 @@ function setupRealtime(hotelId: string) {
 				return;
 			}
 			replaceActivityLog(payload.new as ActivityLogRow);
+		})
+		.on("postgres_changes", { event: "*", schema: "public", table: "entretien_logs", filter: `hotel_id=eq.${hotelId}` }, (payload) => {
+			if (payload.eventType === "DELETE") {
+				mergeState({ entretienLogs: state.entretienLogs.filter((l) => l.id !== (payload.old as { id: string }).id), lastSyncedAt: new Date().toISOString() });
+				return;
+			}
+			replaceEntretienLog(payload.new as EntretienLogRow);
 		});
 
 	activeChannel = channel;
@@ -654,6 +675,38 @@ async function reportIssue(hotelId: string, roomId: string, description: string,
 	writeStorage(queueKey(hotelId), queue);
 }
 
+async function logEntretien(input: LogEntretienInput) {
+	if (!state.hotelId) throw new Error("Hotel data has not finished loading yet.");
+	const newLog: EntretienLogRow = {
+		id: uid(),
+		hotel_id: state.hotelId,
+		room_id: input.roomId,
+		task_type: input.taskType,
+		zone: input.zone,
+		completed_at: new Date().toISOString(),
+		completed_by_staff_id: input.completedByStaffId,
+		notes: input.notes ?? "",
+		created_at: new Date().toISOString(),
+	};
+	replaceEntretienLog(newLog);
+	const { error } = await supabase.from("entretien_logs").insert({
+		id: newLog.id,
+		hotel_id: newLog.hotel_id,
+		room_id: newLog.room_id,
+		task_type: newLog.task_type,
+		zone: newLog.zone,
+		completed_at: newLog.completed_at,
+		completed_by_staff_id: newLog.completed_by_staff_id,
+		notes: newLog.notes,
+	});
+	if (error) {
+		state = { ...state, entretienLogs: sortEntretienLogs(state.entretienLogs.filter((l) => l.id !== newLog.id)) };
+		emit();
+		if (!isNetworkFailure(error)) throw error;
+		mergeState({ lastError: "Synchronisation impossible, veuillez réessayer." });
+	}
+}
+
 async function renameHotel(nextName: string) {
 	await updateHotelName(nextName);
 }
@@ -700,5 +753,5 @@ export function useHotelData(hotelId?: string | null) {
 		void bootstrapHotelData(hotelId ?? undefined);
 	}, [hotelId]);
 
-	 return { ...snapshot, updateRoomStatus, reportIssue, saveRoom, createRoom, deleteRoom, addStaff, deleteStaff, assignRoom, assignVerifier, togglePriority, toggleRecouche, toggleDnd, setCleaningHour, updateNote, assignIssue, resolveIssue, renameHotel, resetLocalCache, clearActivityLogs, toggleNotify, refreshHotelData };
+	 return { ...snapshot, updateRoomStatus, reportIssue, saveRoom, createRoom, deleteRoom, addStaff, deleteStaff, assignRoom, assignVerifier, togglePriority, toggleRecouche, toggleDnd, setCleaningHour, updateNote, assignIssue, resolveIssue, renameHotel, resetLocalCache, clearActivityLogs, toggleNotify, refreshHotelData, logEntretien };
 }
