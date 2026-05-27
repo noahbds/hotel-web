@@ -1418,8 +1418,18 @@ function RoomSheet({ room, data, onClose, onSetStatus, onSave, onDelete, onRepor
 const QUICK_TASKS = [
   { key: "couettes", label: "Couettes", emoji: "🛏" },
   { key: "draps", label: "Draps", emoji: "🛏" },
+  { key: "oreillers", label: "Oreillers", emoji: "🛏" },
+  { key: "serviettes", label: "Serviettes", emoji: "🚿" },
   { key: "siphons_douches", label: "Siphons", emoji: "🚿" },
+  { key: "toilettes", label: "Toilettes", emoji: "🚽" },
+  { key: "lavabo", label: "Lavabo", emoji: "🚰" },
+  { key: "miroirs", label: "Miroirs", emoji: "🪞" },
   { key: "aspirateur", label: "Aspirateur", emoji: "🏠" },
+  { key: "sol", label: "Sol", emoji: "🧹" },
+  { key: "poussiere", label: "Poussière", emoji: "🧹" },
+  { key: "corbeille", label: "Corbeille", emoji: "🗑️" },
+  { key: "mini_bar", label: "Mini-bar", emoji: "🍷" },
+  { key: "vitres", label: "Vitres", emoji: "🪟" },
 ];
 
 function EntretienRapide({ roomId, entretienLogs, onLog, currentStaffId }) {
@@ -1429,14 +1439,15 @@ function EntretienRapide({ roomId, entretienLogs, onLog, currentStaffId }) {
     return entretienLogs.find((l) => l.task_type === taskKey)?.completed_at ?? null;
   }
 
-  function relativeDate(dateStr) {
+  function formatDate(dateStr) {
     if (!dateStr) return "Jamais";
-    const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
-    if (days === 0) return "Auj.";
-    if (days === 1) return "Hier";
-    if (days < 7) return `${days} j`;
-    if (days < 30) return `${Math.floor(days / 7)} sem`;
-    return `${Math.floor(days / 30)} mois`;
+    const d = new Date(dateStr);
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, "0");
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
   }
 
   function dotColor(dateStr) {
@@ -1476,7 +1487,7 @@ function EntretienRapide({ roomId, entretienLogs, onLog, currentStaffId }) {
                 <p className="text-[12px] font-semibold text-stone-800 truncate">{label}</p>
                 <div className="flex items-center gap-1">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor(date)}`} />
-                  <p className="text-[10px] text-stone-400">{relativeDate(date)}</p>
+                  <p className="text-[10px] text-stone-400">{formatDate(date)}</p>
                 </div>
               </div>
               <span className="text-[11px] font-semibold text-emerald-600 shrink-0">
