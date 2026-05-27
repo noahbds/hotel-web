@@ -1,19 +1,6 @@
 import { useState, useMemo } from "react";
 import { ChevronDown, ChevronUp, CheckCircle2, Clock, AlertCircle, MapPin, Activity, Settings, X, RotateCcw } from "lucide-react";
 
-const FREQ_STORAGE_KEY = "hotel-app:entretien-frequencies";
-
-function loadFreqOverrides() {
-  try {
-    const raw = localStorage.getItem(FREQ_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
-}
-
-function saveFreqOverrides(overrides) {
-  try { localStorage.setItem(FREQ_STORAGE_KEY, JSON.stringify(overrides)); } catch {}
-}
-
 function resolveFreq(taskKey, defaultDays, freqOverrides) {
   return freqOverrides[taskKey] ?? defaultDays;
 }
@@ -635,7 +622,6 @@ function FrequencyConfigSheet({ onClose, freqOverrides, onSave }) {
       const n = parseInt(inputVals[task.key], 10);
       if (!isNaN(n) && n > 0 && n !== task.frequencyDays) overrides[task.key] = n;
     }
-    saveFreqOverrides(overrides);
     onSave(overrides);
     onClose();
   }
@@ -749,12 +735,11 @@ function FrequencyConfigSheet({ onClose, freqOverrides, onSave }) {
   );
 }
 
-export default function EntretienTab({ rooms, entretienLogs, staff, onLog, currentStaffId, isAdmin }) {
+export default function EntretienTab({ rooms, entretienLogs, staff, onLog, currentStaffId, isAdmin, freqOverrides = {}, onSaveFrequencies }) {
   const [view, setView] = useState("rooms");
   const [selectedRoomId, setSelectedRoomId] = useState(null);
   const [selectedZoneKey, setSelectedZoneKey] = useState(null);
   const [showFreqConfig, setShowFreqConfig] = useState(false);
-  const [freqOverrides, setFreqOverrides] = useState(loadFreqOverrides);
 
   const floorGroups = useMemo(() => {
     const map = {};
@@ -906,7 +891,7 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
       {showFreqConfig && (
         <FrequencyConfigSheet
           freqOverrides={freqOverrides}
-          onSave={setFreqOverrides}
+          onSave={onSaveFrequencies}
           onClose={() => setShowFreqConfig(false)}
         />
       )}

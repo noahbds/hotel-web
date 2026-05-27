@@ -512,6 +512,17 @@ async function updateHotelName(nextName: string) {
 	}
 }
 
+async function updateEntretienFrequencies(frequencies: Record<string, number>) {
+	if (!state.hotelId || !state.hotel) return;
+	const previous = state.hotel;
+	replaceHotel({ ...previous, entretien_frequencies: frequencies, updated_at: new Date().toISOString() });
+	const { error } = await supabase.from("hotels").update({ entretien_frequencies: frequencies }).eq("id", state.hotelId);
+	if (error && !isNetworkFailure(error)) {
+		replaceHotel(previous);
+		throw error;
+	}
+}
+
 async function createRoom(room: { id: string; name: string; floor: number; status: RoomStatus; note?: string; priority?: boolean; recouche?: boolean; dnd?: boolean; cleaning_hour?: string }) {
 	if (!state.hotelId) throw new Error("Hotel data has not finished loading yet.");
 	const nextRoom: RoomRow = { id: room.id, hotel_id: state.hotelId, name: room.name, floor: room.floor, status: room.status, assignee_staff_id: null, verifier_staff_id: null, priority: room.priority ?? false, note: room.note ?? "", recouche: room.recouche ?? false, dnd: room.dnd ?? false, cleaning_hour: room.cleaning_hour ?? "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
@@ -753,5 +764,5 @@ export function useHotelData(hotelId?: string | null) {
 		void bootstrapHotelData(hotelId ?? undefined);
 	}, [hotelId]);
 
-	 return { ...snapshot, updateRoomStatus, reportIssue, saveRoom, createRoom, deleteRoom, addStaff, deleteStaff, assignRoom, assignVerifier, togglePriority, toggleRecouche, toggleDnd, setCleaningHour, updateNote, assignIssue, resolveIssue, renameHotel, resetLocalCache, clearActivityLogs, toggleNotify, refreshHotelData, logEntretien };
+	 return { ...snapshot, updateRoomStatus, reportIssue, saveRoom, createRoom, deleteRoom, addStaff, deleteStaff, assignRoom, assignVerifier, togglePriority, toggleRecouche, toggleDnd, setCleaningHour, updateNote, assignIssue, resolveIssue, renameHotel, resetLocalCache, clearActivityLogs, toggleNotify, refreshHotelData, logEntretien, updateEntretienFrequencies };
 }

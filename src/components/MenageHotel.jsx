@@ -183,6 +183,7 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
 
     return {
       hotelName: hotel.hotel?.name || "Hôtel Le Beffroi",
+      entretienFrequencies: hotel.hotel?.entretien_frequencies ?? {},
       staff: hotel.staff.map((person) => ({ id: person.id, name: person.name, role: person.role })),
       rooms,
       issues: hotel.issues.map((issue) => ({
@@ -210,17 +211,19 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
 
   const entretienOverdueCount = useMemo(() => {
     const allTasks = Object.values(ENTRETIEN_TASKS).flatMap((c) => c.tasks);
+    const freqs = data.entretienFrequencies;
     let count = 0;
     for (const room of data.rooms) {
       for (const task of allTasks) {
+        const freq = freqs[task.key] ?? task.frequencyDays;
         const latest = (data.entretienLogs ?? []).find((l) => l.room_id === room.id && l.task_type === task.key);
         if (!latest) { count++; continue; }
         const days = Math.floor((Date.now() - new Date(latest.completed_at).getTime()) / 86400000);
-        if (days > task.frequencyDays) count++;
+        if (days > freq) count++;
       }
     }
     return count;
-  }, [data.rooms, data.entretienLogs]);
+  }, [data.rooms, data.entretienLogs, data.entretienFrequencies]);
 
   const openRoom = useMemo(
     () => data.rooms.find((room) => room.id === openRoomId) || null,
@@ -357,6 +360,13 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
     } catch (e) { console.error(e); showToast("Enregistrement impossible"); }
   };
 
+  const saveEntretienFrequencies = async (frequencies) => {
+    try {
+      await hotel.updateEntretienFrequencies(frequencies);
+      showToast("Fréquences mises à jour");
+    } catch (e) { console.error(e); showToast("Sauvegarde impossible"); }
+  };
+
   const assignIssue = async (issue, staffId) => {
     try { await hotel.assignIssue(issue.id, staffId); }
     catch (e) { console.error(e); showToast("Attribution impossible"); }
@@ -390,9 +400,9 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
   const toVerifyCount = data.rooms.filter((r) => r.status === "propre").length;
 
   return (
-    <div className="h-screen bg-stone-100 flex justify-center overflow-hidden"
-      style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif" }}>
-      <div className="w-full max-w-md bg-stone-50 h-screen relative shadow-xl flex flex-col">
+    <div className="bg-stone-100 flex justify-center overflow-hidden"
+      style={{ height: "100dvh", fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif" }}>
+      <div className="w-full max-w-md bg-stone-50 relative shadow-xl flex flex-col overflow-hidden" style={{ height: "100dvh" }}>
 
         {/* En-tête */}
         <header className="px-5 pt-6 pb-3 bg-white border-b border-stone-100 sticky top-0 z-20">
@@ -491,6 +501,8 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
               onLog={logEntretien}
               currentStaffId={profile?.staff_id ?? null}
               isAdmin={profile?.is_admin ?? false}
+              freqOverrides={data.entretienFrequencies}
+              onSaveFrequencies={saveEntretienFrequencies}
             />
           )}
         </main>

@@ -2,7 +2,7 @@ export type RoomStatus = "sale" | "propre" | "controlee";
 export type StaffRole = "chambre" | "gouvernante" | "maintenance" | "reception";
 export type ActivityType = "info" | "status" | "issue" | "resolved" | "assign" | "verify";
 
-export interface HotelRow { id: string; name: string; created_at: string; updated_at: string; }
+export interface HotelRow { id: string; name: string; entretien_frequencies: Record<string, number>; created_at: string; updated_at: string; }
 export interface StaffRow {
 	id: string; hotel_id: string; name: string; role: StaffRole; active: boolean;
 	hidden: boolean; profile_id: string | null; avatar_url: string;
