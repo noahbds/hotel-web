@@ -1,5 +1,22 @@
 import { useState, useMemo } from "react";
-import { ChevronDown, ChevronUp, CheckCircle2, Clock, AlertCircle, MapPin, Activity } from "lucide-react";
+import { ChevronDown, ChevronUp, CheckCircle2, Clock, AlertCircle, MapPin, Activity, Settings, X, RotateCcw } from "lucide-react";
+
+const FREQ_STORAGE_KEY = "hotel-app:entretien-frequencies";
+
+function loadFreqOverrides() {
+  try {
+    const raw = localStorage.getItem(FREQ_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveFreqOverrides(overrides) {
+  try { localStorage.setItem(FREQ_STORAGE_KEY, JSON.stringify(overrides)); } catch {}
+}
+
+function resolveFreq(taskKey, defaultDays, freqOverrides) {
+  return freqOverrides[taskKey] ?? defaultDays;
+}
 
 export const ENTRETIEN_TASKS = {
   literie: {
@@ -131,21 +148,22 @@ function StatusDot({ dateStr, frequencyDays = 30, size = "sm" }) {
   );
 }
 
-function roomStats(room, entretienLogs) {
+function roomStats(room, entretienLogs, freqOverrides = {}) {
   const allTasks = Object.values(ENTRETIEN_TASKS).flatMap((c) => c.tasks);
   const total = allTasks.length;
   let green = 0, amber = 0, red = 0;
   let lastActivityDate = null;
 
   for (const task of allTasks) {
+    const freq = resolveFreq(task.key, task.frequencyDays, freqOverrides);
     const log = entretienLogs.find((l) => l.room_id === room.id && l.task_type === task.key);
     if (log) {
       if (!lastActivityDate || new Date(log.completed_at) > new Date(lastActivityDate)) {
         lastActivityDate = log.completed_at;
       }
       const d = daysSince(log.completed_at);
-      if (d <= task.frequencyDays / 2) green++;
-      else if (d <= task.frequencyDays) amber++;
+      if (d <= freq / 2) green++;
+      else if (d <= freq) amber++;
       else red++;
     } else {
       red++;
@@ -166,8 +184,8 @@ function formatDateTime(dateStr) {
   return `${day}/${month}/${year} ${h}:${m}`;
 }
 
-function RoomSummaryCard({ room, entretienLogs, onClick }) {
-  const stats = useMemo(() => roomStats(room, entretienLogs), [room, entretienLogs]);
+function RoomSummaryCard({ room, entretienLogs, freqOverrides, onClick }) {
+  const stats = useMemo(() => roomStats(room, entretienLogs, freqOverrides), [room, entretienLogs, freqOverrides]);
   const { total, green, amber, red, lastActivityDate } = stats;
 
   const healthLabel = red === 0 && amber === 0
@@ -225,7 +243,7 @@ function RoomSummaryCard({ room, entretienLogs, onClick }) {
       </div>
 
       {/* Category chips */}
-      <CategoryChips entretienLogs={entretienLogs} roomId={room.id} zone={null} />
+      <CategoryChips entretienLogs={entretienLogs} roomId={room.id} zone={null} freqOverrides={freqOverrides} />
 
       {/* Last activity */}
       <div className="flex items-center gap-1.5 text-[11px] text-stone-400">
@@ -239,7 +257,7 @@ function RoomSummaryCard({ room, entretienLogs, onClick }) {
   );
 }
 
-function CategoryChips({ entretienLogs, roomId, zone, taskDefs = ENTRETIEN_TASKS }) {
+function CategoryChips({ entretienLogs, roomId, zone, taskDefs = ENTRETIEN_TASKS, freqOverrides = {} }) {
   return (
     <div className="flex flex-wrap gap-1">
       {Object.entries(taskDefs).map(([catKey, cat]) => {
@@ -250,7 +268,8 @@ function CategoryChips({ entretienLogs, roomId, zone, taskDefs = ENTRETIEN_TASKS
               l.task_type === task.key &&
               (roomId ? l.room_id === roomId : l.zone === zone)
           );
-          const c = statusColor(log?.completed_at ?? null, task.frequencyDays);
+          const freq = resolveFreq(task.key, task.frequencyDays, freqOverrides);
+          const c = statusColor(log?.completed_at ?? null, freq);
           if (c === "red") { worstColor = "red"; break; }
           if (c === "orange") worstColor = "orange";
         }
@@ -276,21 +295,22 @@ function CategoryChips({ entretienLogs, roomId, zone, taskDefs = ENTRETIEN_TASKS
   );
 }
 
-function zoneStats(zoneKey, entretienLogs) {
+function zoneStats(zoneKey, entretienLogs, freqOverrides = {}) {
   const allTasks = Object.values(ZONE_TASKS).flatMap((c) => c.tasks);
   const total = allTasks.length;
   let green = 0, amber = 0, red = 0;
   let lastActivityDate = null;
 
   for (const task of allTasks) {
+    const freq = resolveFreq(task.key, task.frequencyDays, freqOverrides);
     const log = entretienLogs.find((l) => l.zone === zoneKey && l.task_type === task.key);
     if (log) {
       if (!lastActivityDate || new Date(log.completed_at) > new Date(lastActivityDate)) {
         lastActivityDate = log.completed_at;
       }
       const d = daysSince(log.completed_at);
-      if (d <= task.frequencyDays / 2) green++;
-      else if (d <= task.frequencyDays) amber++;
+      if (d <= freq / 2) green++;
+      else if (d <= freq) amber++;
       else red++;
     } else {
       red++;
@@ -300,8 +320,8 @@ function zoneStats(zoneKey, entretienLogs) {
   return { total, green, amber, red, lastActivityDate };
 }
 
-function ZoneSummaryCard({ zone, entretienLogs, onClick }) {
-  const stats = useMemo(() => zoneStats(zone.key, entretienLogs), [zone, entretienLogs]);
+function ZoneSummaryCard({ zone, entretienLogs, freqOverrides, onClick }) {
+  const stats = useMemo(() => zoneStats(zone.key, entretienLogs, freqOverrides), [zone, entretienLogs, freqOverrides]);
   const { total, green, amber, red, lastActivityDate } = stats;
 
   const healthLabel = red === 0 && amber === 0
@@ -352,7 +372,7 @@ function ZoneSummaryCard({ zone, entretienLogs, onClick }) {
         <span className="ml-auto text-stone-400">{green + amber}/{total}</span>
       </div>
 
-      <CategoryChips entretienLogs={entretienLogs} roomId={null} zone={zone.key} taskDefs={ZONE_TASKS} />
+      <CategoryChips entretienLogs={entretienLogs} roomId={null} zone={zone.key} taskDefs={ZONE_TASKS} freqOverrides={freqOverrides} />
 
       <div className="flex items-center gap-1.5 text-[11px] text-stone-400">
         <Activity size={11} className="flex-shrink-0" />
@@ -414,7 +434,7 @@ function TaskRow({ taskKey, taskLabel, frequencyDays = 30, logs, onLog, staffNam
           {recent.map((log) => (
             <div key={log.id} className="flex items-center gap-2 text-xs text-stone-500">
               <CheckCircle2 size={11} className="text-emerald-400 flex-shrink-0" />
-              <span>{new Date(log.completed_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}</span>
+              <span>{new Date(log.completed_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
               {log.completed_by_staff_id && staffName(log.completed_by_staff_id) && (
                 <span className="text-stone-400">— {staffName(log.completed_by_staff_id)}</span>
               )}
@@ -426,7 +446,7 @@ function TaskRow({ taskKey, taskLabel, frequencyDays = 30, logs, onLog, staffNam
   );
 }
 
-function RoomDetailSheet({ room, entretienLogs, staff, onLog, onClose, currentStaffId }) {
+function RoomDetailSheet({ room, entretienLogs, staff, onLog, onClose, currentStaffId, freqOverrides = {} }) {
   const [openCats, setOpenCats] = useState({ literie: true, sdb: false, chambre: false, shampooing: false });
 
   function staffName(id) {
@@ -491,7 +511,7 @@ function RoomDetailSheet({ room, entretienLogs, staff, onLog, onClose, currentSt
                       key={task.key}
                       taskKey={task.key}
                       taskLabel={task.label}
-                      frequencyDays={task.frequencyDays}
+                      frequencyDays={resolveFreq(task.key, task.frequencyDays, freqOverrides)}
                       logs={logsForTask(task.key)}
                       onLog={handleLog}
                       staffName={staffName}
@@ -507,7 +527,7 @@ function RoomDetailSheet({ room, entretienLogs, staff, onLog, onClose, currentSt
   );
 }
 
-function ZoneDetailSheet({ zone, entretienLogs, staff, onLog, onClose, currentStaffId }) {
+function ZoneDetailSheet({ zone, entretienLogs, staff, onLog, onClose, currentStaffId, freqOverrides = {} }) {
   const [openCats, setOpenCats] = useState({ sols: true, surfaces: false, vitrerie: false, luminaires: false });
 
   function staffName(id) {
@@ -572,7 +592,7 @@ function ZoneDetailSheet({ zone, entretienLogs, staff, onLog, onClose, currentSt
                       key={task.key}
                       taskKey={task.key}
                       taskLabel={task.label}
-                      frequencyDays={task.frequencyDays}
+                      frequencyDays={resolveFreq(task.key, task.frequencyDays, freqOverrides)}
                       logs={logsForTask(task.key)}
                       onLog={handleLog}
                       staffName={staffName}
@@ -588,10 +608,137 @@ function ZoneDetailSheet({ zone, entretienLogs, staff, onLog, onClose, currentSt
   );
 }
 
-export default function EntretienTab({ rooms, entretienLogs, staff, onLog, currentStaffId }) {
+function FrequencyConfigSheet({ onClose, freqOverrides, onSave }) {
+  const [draft, setDraft] = useState(() => ({ ...freqOverrides }));
+
+  function setVal(taskKey, defaultDays, raw) {
+    const n = parseInt(raw, 10);
+    setDraft((prev) => {
+      const next = { ...prev };
+      if (!isNaN(n) && n > 0 && n !== defaultDays) next[taskKey] = n;
+      else delete next[taskKey];
+      return next;
+    });
+  }
+
+  function handleSave() {
+    saveFreqOverrides(draft);
+    onSave(draft);
+    onClose();
+  }
+
+  function handleReset() {
+    setDraft({});
+  }
+
+  const allTaskDefs = [
+    { groupLabel: "Chambres", taskDefs: ENTRETIEN_TASKS },
+    { groupLabel: "Zones communes", taskDefs: ZONE_TASKS },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col"
+      style={{ background: "rgba(0,0,0,0.45)" }}
+      onClick={onClose}
+    >
+      <div
+        className="mt-auto bg-stone-50 rounded-t-3xl overflow-y-auto"
+        style={{ maxHeight: "92vh", animation: "slideUp 0.25s ease" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-stone-50 z-10 px-5 pt-5 pb-3 border-b border-stone-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-stone-900">Fréquences d'entretien</h2>
+              <p className="text-xs text-stone-400 mt-0.5">Nombre de jours avant qu'une tâche soit considérée en retard</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleReset}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-stone-100 text-stone-500"
+                title="Réinitialiser aux valeurs par défaut"
+              >
+                <RotateCcw size={14} />
+              </button>
+              <button
+                onClick={onClose}
+                type="button"
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-stone-200 text-stone-600 text-sm font-bold"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-6">
+          {allTaskDefs.map(({ groupLabel, taskDefs }) => (
+            <div key={groupLabel}>
+              <p className="text-[11px] font-bold text-stone-400 uppercase tracking-wider mb-3">{groupLabel}</p>
+              <div className="space-y-3">
+                {Object.entries(taskDefs).map(([catKey, cat]) => (
+                  <div key={catKey} className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-stone-50 border-b border-stone-100">
+                      <span>{cat.emoji}</span>
+                      <span className="text-sm font-semibold text-stone-700">{cat.label}</span>
+                    </div>
+                    <div className="divide-y divide-stone-100">
+                      {cat.tasks.map((task) => {
+                        const currentVal = draft[task.key] ?? task.frequencyDays;
+                        const isOverridden = draft[task.key] !== undefined;
+                        return (
+                          <div key={task.key} className="flex items-center gap-3 px-4 py-2.5">
+                            <span className={`flex-1 text-sm ${isOverridden ? "text-stone-900 font-medium" : "text-stone-600"}`}>
+                              {task.label}
+                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <input
+                                type="number"
+                                min="1"
+                                max="365"
+                                value={currentVal}
+                                onChange={(e) => setVal(task.key, task.frequencyDays, e.target.value)}
+                                className={`w-16 text-center text-sm rounded-lg px-2 py-1 outline-none border ${
+                                  isOverridden
+                                    ? "border-amber-300 bg-amber-50 text-amber-900 font-semibold"
+                                    : "border-stone-200 bg-stone-100 text-stone-600"
+                                }`}
+                              />
+                              <span className="text-xs text-stone-400">j</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="sticky bottom-0 bg-stone-50 border-t border-stone-200 px-5 py-4">
+          <button
+            type="button"
+            onClick={handleSave}
+            className="w-full bg-stone-800 text-white font-semibold py-3 rounded-2xl active:scale-[0.98] transition"
+          >
+            Enregistrer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function EntretienTab({ rooms, entretienLogs, staff, onLog, currentStaffId, isAdmin }) {
   const [view, setView] = useState("rooms");
   const [selectedRoomId, setSelectedRoomId] = useState(null);
   const [selectedZoneKey, setSelectedZoneKey] = useState(null);
+  const [showFreqConfig, setShowFreqConfig] = useState(false);
+  const [freqOverrides, setFreqOverrides] = useState(loadFreqOverrides);
 
   const floorGroups = useMemo(() => {
     const map = {};
@@ -609,12 +756,13 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
     const allTasks = Object.values(ENTRETIEN_TASKS).flatMap((c) => c.tasks);
     for (const room of rooms) {
       for (const task of allTasks) {
+        const freq = resolveFreq(task.key, task.frequencyDays, freqOverrides);
         const latest = entretienLogs.find((l) => l.room_id === room.id && l.task_type === task.key);
-        if (!latest || daysSince(latest.completed_at) > task.frequencyDays) count++;
+        if (!latest || daysSince(latest.completed_at) > freq) count++;
       }
     }
     return count;
-  }, [rooms, entretienLogs]);
+  }, [rooms, entretienLogs, freqOverrides]);
 
   const selectedRoom = rooms.find((r) => r.id === selectedRoomId);
   const selectedZone = ZONES.find((z) => z.key === selectedZoneKey);
@@ -629,6 +777,16 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
             <span className="text-xs font-bold bg-rose-500 text-white rounded-full px-2 py-0.5">
               {overdueCount}
             </span>
+          )}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowFreqConfig(true)}
+              className="ml-auto w-8 h-8 flex items-center justify-center rounded-full bg-stone-100 text-stone-500 active:bg-stone-200 transition"
+              title="Configurer les fréquences"
+            >
+              <Settings size={15} />
+            </button>
           )}
         </div>
 
@@ -679,6 +837,7 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
                       key={room.id}
                       room={room}
                       entretienLogs={entretienLogs}
+                      freqOverrides={freqOverrides}
                       onClick={() => setSelectedRoomId(room.id)}
                     />
                   ))}
@@ -693,6 +852,7 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
                 key={zone.key}
                 zone={zone}
                 entretienLogs={entretienLogs}
+                freqOverrides={freqOverrides}
                 onClick={() => setSelectedZoneKey(zone.key)}
               />
             ))}
@@ -709,6 +869,7 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
           onLog={onLog}
           onClose={() => setSelectedRoomId(null)}
           currentStaffId={currentStaffId}
+          freqOverrides={freqOverrides}
         />
       )}
 
@@ -721,6 +882,16 @@ export default function EntretienTab({ rooms, entretienLogs, staff, onLog, curre
           onLog={onLog}
           onClose={() => setSelectedZoneKey(null)}
           currentStaffId={currentStaffId}
+          freqOverrides={freqOverrides}
+        />
+      )}
+
+      {/* Frequency config sheet (admin only) */}
+      {showFreqConfig && (
+        <FrequencyConfigSheet
+          freqOverrides={freqOverrides}
+          onSave={setFreqOverrides}
+          onClose={() => setShowFreqConfig(false)}
         />
       )}
     </div>

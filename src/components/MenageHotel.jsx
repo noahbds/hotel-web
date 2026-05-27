@@ -209,14 +209,14 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
   }, [hotel.activityLogs, hotel.entretienLogs, hotel.hotel, hotel.hotelId, hotel.issues, hotel.notifyOn, hotel.rooms, hotel.staff]);
 
   const entretienOverdueCount = useMemo(() => {
-    const allKeys = Object.values(ENTRETIEN_TASKS).flatMap((c) => c.tasks.map((t) => t.key));
+    const allTasks = Object.values(ENTRETIEN_TASKS).flatMap((c) => c.tasks);
     let count = 0;
     for (const room of data.rooms) {
-      for (const key of allKeys) {
-        const latest = (data.entretienLogs ?? []).find((l) => l.room_id === room.id && l.task_type === key);
+      for (const task of allTasks) {
+        const latest = (data.entretienLogs ?? []).find((l) => l.room_id === room.id && l.task_type === task.key);
         if (!latest) { count++; continue; }
         const days = Math.floor((Date.now() - new Date(latest.completed_at).getTime()) / 86400000);
-        if (days > 30) count++;
+        if (days > task.frequencyDays) count++;
       }
     }
     return count;
@@ -490,6 +490,7 @@ export default function App({ profile, onSignOut, onOpenAdmin }) {
               staff={data.staff}
               onLog={logEntretien}
               currentStaffId={profile?.staff_id ?? null}
+              isAdmin={profile?.is_admin ?? false}
             />
           )}
         </main>
